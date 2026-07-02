@@ -1,17 +1,14 @@
-"""Dispatch LINE webhook events to appropriate handlers.
-
-Week 2 handles: Follow and plain-text Message events.
-Postback events (booking actions) will be added in Week 3.
-"""
+"""Dispatch LINE webhook events to appropriate handlers."""
 from linebot.v3.webhook import Event, MessageEvent
 from linebot.v3.webhooks import FollowEvent, TextMessageContent
 
-from app.services.line import push_text, reply_text
+from app.core.config import settings
+from app.services.line import reply_text
 
 _MENU = (
-    "สวัสดี! ระบบหมอนัด 🏥\n"
+    "สวัสดี! ระบบหมอนัด\n"
     "─────────────────\n"
-    "พิมพ์ 'จอง'  → จองคิวผ่าน LINE\n"
+    "พิมพ์ 'จอง'   → จองคิวแพทย์\n"
     "พิมพ์ 'สถานะ' → ตรวจสอบคิวของคุณ"
 )
 
@@ -27,21 +24,23 @@ async def dispatch(events: list[Event]) -> None:
 
 
 async def _on_follow(event: FollowEvent) -> None:
-    await reply_text(event.reply_token, f"ยินดีต้อนรับ!\n\n{_MENU}")
+    await reply_text(event.reply_token, f"ยินดีต้อนรับสู่หมอนัด!\n\n{_MENU}")
 
 
 async def _on_text(event: MessageEvent) -> None:
-    text = event.message.text.strip()
-    lower = text.lower()
+    lower = event.message.text.strip().lower()
 
     if lower in ("จอง", "book", "นัด"):
-        # Week 3: replace placeholder with actual LIFF URL
-        await reply_text(
-            event.reply_token,
-            "กรุณากดลิงก์ด้านล่างเพื่อจองคิว:\n[LIFF URL — จะเพิ่มใน Week 3]",
-        )
+        if settings.liff_url and settings.clinic_id:
+            url = f"{settings.liff_url}?clinicId={settings.clinic_id}"
+            msg = f"กดลิงก์ด้านล่างเพื่อจองคิว:\n{url}"
+        else:
+            msg = "ระบบกำลังเตรียมพร้อม กรุณารอสักครู่"
+        await reply_text(event.reply_token, msg)
+
     elif lower in ("สถานะ", "status", "คิว", "ดูคิว"):
-        # Week 3: query patient's bookings and format them
-        await reply_text(event.reply_token, "ระบบกำลังพัฒนา กรุณารอสักครู่")
+        # Week 3 scope: basic reply; full booking list query in a later iteration
+        await reply_text(event.reply_token, "กรุณาติดต่อเจ้าหน้าที่เพื่อตรวจสอบคิว")
+
     else:
         await reply_text(event.reply_token, _MENU)

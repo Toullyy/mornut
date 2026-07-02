@@ -1,0 +1,32 @@
+import { apiFetch } from './client'
+
+export type CoverageType = 'cash' | 'sso' | 'universal'
+
+export interface BookingPayload {
+  clinic_id: string
+  patient_line_id: string
+  patient_name: string
+  phone: string
+  service_id: string
+  date: string
+  time: string
+  coverage: CoverageType
+}
+
+export interface BookingResult {
+  id: string
+  status: string
+  date: string
+  time: string
+  coverage: CoverageType
+  patient_name: string
+  clinic_id: string
+  service_id: string
+  created_at: string
+}
+
+export const createBooking = (payload: BookingPayload) =>
+  apiFetch<BookingResult>('/bookings', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
