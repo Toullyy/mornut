@@ -35,9 +35,8 @@ export function useFirestoreCollection<T extends { id: string }>(
       },
     )
     return unsubscribe
-    // constraints is intentionally excluded — callers must memoize it themselves
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collectionName])
+    // constraints MUST be memoised by the caller (useMemo) so this dep is stable
+  }, [collectionName, constraints])
 
   return { data, loading, error }
 }

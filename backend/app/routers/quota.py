@@ -1,9 +1,16 @@
-from fastapi import APIRouter
+import asyncio
+from typing import Annotated
 
-from app.models.clinic import QuotaOut
+from fastapi import APIRouter, Depends
+
+from app.core.security import get_admin_user
+from app.models.clinic import QuotaOut, QuotaSetRequest
 from app.services import clinic_service
+from app.services import firestore as repo
 
 router = APIRouter()
+
+AdminUser = Annotated[dict, Depends(get_admin_user)]
 
 
 @router.get("/{clinic_id}/{date}", response_model=QuotaOut)
@@ -12,6 +19,12 @@ async def get_quota(clinic_id: str, date: str) -> QuotaOut:
 
 
 @router.put("/{clinic_id}/{date}", status_code=204)
-async def set_quota(clinic_id: str, date: str) -> None:
-    # Week 5: admin sets daily quota limits via Dashboard
-    raise NotImplementedError
+async def set_quota(
+    clinic_id: str,
+    date: str,
+    body: QuotaSetRequest,
+    _admin: AdminUser,
+) -> None:
+    await asyncio.to_thread(
+        repo.update_quota_limits, clinic_id, date, body.cash, body.sso, body.universal
+    )

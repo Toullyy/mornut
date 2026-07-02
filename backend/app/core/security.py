@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -6,6 +7,7 @@ from typing import Annotated
 import httpx
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from firebase_admin import auth as fb_auth
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -49,3 +51,26 @@ async def get_line_user_id(
         raise HTTPException(status_code=401, detail="Invalid or expired LINE access token")
 
     return resp.json()["userId"]
+
+
+# ── Admin API (Firebase ID token) ─────────────────────────────────────────────
+
+async def get_admin_user(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(_bearer)
+    ] = None,
+) -> dict:
+    """FastAPI dependency: verify a Firebase ID token and return the decoded claims.
+
+    The admin dashboard signs in with Firebase email/password then passes
+    `Authorization: Bearer <firebase_id_token>` to protected admin endpoints.
+    """
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
+    try:
+        decoded: dict = await asyncio.to_thread(
+            fb_auth.verify_id_token, credentials.credentials
+        )
+        return decoded
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail="Invalid or expired Firebase token") from exc

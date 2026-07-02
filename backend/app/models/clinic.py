@@ -37,3 +37,14 @@ class ServiceOut(BaseModel):
 class AvailableSlot(BaseModel):
     time: str
     available: int
+
+
+class QuotaSetRequest(BaseModel):
+    """Admin request body for PUT /quotas/{clinic_id}/{date}.
+
+    Sets the daily *limit* for each coverage type; the current *used* counter
+    in Firestore is preserved (we only overwrite the limit field).
+    """
+    cash: int
+    sso: int
+    universal: int

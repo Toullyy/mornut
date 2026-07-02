@@ -183,3 +183,27 @@ def set_quota(clinic_id: str, date: str, data: dict) -> None:
         .document(date)
         .set(data, merge=True)
     )
+
+
+def update_quota_limits(clinic_id: str, date: str, cash: int, sso: int, universal: int) -> None:
+    """Update only the limit fields for each coverage type, preserving used counters.
+
+    Uses update() with dot-notation so sibling fields (like .used) are untouched.
+    Falls back to set() if the document doesn't exist yet.
+    """
+    ref = (
+        get_db()
+        .collection("clinics")
+        .document(clinic_id)
+        .collection("quotas")
+        .document(date)
+    )
+    try:
+        ref.update({"cash.limit": cash, "sso.limit": sso, "universal.limit": universal})
+    except Exception:
+        # Document doesn't exist — create it with zero used counters
+        ref.set({
+            "cash": {"limit": cash, "used": 0},
+            "sso": {"limit": sso, "used": 0},
+            "universal": {"limit": universal, "used": 0},
+        })
