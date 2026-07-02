@@ -22,7 +22,14 @@ def get_db() -> Client:
     if _db is None:
         if not firebase_admin._apps:
             cred = credentials.ApplicationDefault()
-            firebase_admin.initialize_app(cred, {"projectId": settings.firebase_project_id})
+            bucket = (
+                settings.firebase_storage_bucket
+                or f"{settings.firebase_project_id}.appspot.com"
+            )
+            firebase_admin.initialize_app(
+                cred,
+                {"projectId": settings.firebase_project_id, "storageBucket": bucket},
+            )
         _db = firestore.client()
     return _db
 
@@ -152,6 +159,19 @@ def get_quota(clinic_id: str, date: str) -> dict:
         .get()
     )
     return doc.to_dict() or {}
+
+
+def is_trans_ref_used(trans_ref: str) -> bool:
+    """Return True if any confirmed booking already contains this transRef."""
+    docs = (
+        get_db()
+        .collection("bookings")
+        .where("slip.transRef", "==", trans_ref)
+        .where("slip.verified", "==", True)
+        .limit(1)
+        .stream()
+    )
+    return any(True for _ in docs)
 
 
 def set_quota(clinic_id: str, date: str, data: dict) -> None:

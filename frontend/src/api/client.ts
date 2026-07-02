@@ -10,6 +10,21 @@ function getToken(): string | null {
   }
 }
 
+export async function apiFetchForm<T>(path: string, body: FormData): Promise<T> {
+  const token = getToken()
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    body,
+    // No Content-Type header — browser sets multipart boundary automatically
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { detail?: string }).detail ?? `HTTP ${res.status}`)
+  }
+  return res.json() as Promise<T>
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken()
   const res = await fetch(`${BASE}${path}`, {

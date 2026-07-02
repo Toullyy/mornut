@@ -1,5 +1,6 @@
 import { liff } from '../lib/liff'
 import type { FormData } from './BookingPage'
+import SlipUpload from './SlipUpload'
 import * as t from './theme'
 
 interface Props {
@@ -65,28 +66,28 @@ export default function BookingSuccess({ bookingId, form }: Props) {
         ))}
       </div>
 
-      {/* Deposit instructions */}
-      <div
-        style={{
-          width: '100%',
-          background: '#fff8e1',
-          border: `1px solid ${t.c.warn}`,
-          borderRadius: 12,
-          padding: 14,
-          marginTop: 4,
-          fontSize: 14,
-          lineHeight: 1.6,
-          color: '#5d4037',
-        }}
-      >
-        <strong>⚠️ กรุณาชำระมัดจำ ฿{form.depositAmount.toLocaleString()} ภายใน 15 นาที</strong>
-        <br />
-        หลังชำระเงินกรุณาส่งหลักฐานการโอนในแชทนี้
-        <br />
-        <span style={{ fontSize: 12, color: t.c.sub }}>
-          (ฟังก์ชันอัปโหลดสลิปจะเปิดให้บริการเร็วๆ นี้)
-        </span>
-      </div>
+      {/* Deposit payment section */}
+      {form.depositAmount > 0 && (
+        <div style={{ width: '100%' }}>
+          <div
+            style={{
+              background: '#fff8e1',
+              border: `1px solid ${t.c.warn}`,
+              borderRadius: 12,
+              padding: 14,
+              fontSize: 14,
+              lineHeight: 1.6,
+              color: '#5d4037',
+            }}
+          >
+            <strong>⚠️ กรุณาชำระมัดจำ ฿{form.depositAmount.toLocaleString()} ภายใน 15 นาที</strong>
+            <br />
+            โอนเงินแล้วอัปโหลดสลิปด้านล่างเพื่อยืนยันการจอง
+          </div>
+
+          <SlipUpload bookingId={bookingId} depositAmount={form.depositAmount} />
+        </div>
+      )}
 
       <button
         style={{ ...t.btn(false), marginTop: 24 }}

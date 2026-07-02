@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     # Firebase
     firebase_project_id: str
     google_application_credentials: str = ""
+    firebase_storage_bucket: str = ""   # defaults to {project_id}.appspot.com
 
     # Clinic (one LINE OA = one clinic for MVP)
     clinic_id: str = ""
