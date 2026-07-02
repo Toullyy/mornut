@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Header, Request
-from linebot.v3.webhooks import WebhookParser
+from linebot.v3.webhook import WebhookParser
 
 from app.core.config import settings
 from app.core.security import verify_line_signature

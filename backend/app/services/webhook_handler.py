@@ -3,12 +3,8 @@
 Week 2 handles: Follow and plain-text Message events.
 Postback events (booking actions) will be added in Week 3.
 """
-from linebot.v3.webhooks import (
-    Event,
-    FollowEvent,
-    MessageEvent,
-    TextMessageContent,
-)
+from linebot.v3.webhook import Event, MessageEvent
+from linebot.v3.webhooks import FollowEvent, TextMessageContent
 
 from app.services.line import push_text, reply_text
 
