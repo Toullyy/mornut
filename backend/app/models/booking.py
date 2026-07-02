@@ -35,6 +35,8 @@ class BookingCreate(BaseModel):
     patient_name: str
     phone: str
     service_id: str
+    service_name: str = ""
+    deposit_amount: float = 0
     date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$", examples=["2025-12-31"])
     time: str = Field(..., pattern=r"^\d{2}:\d{2}$", examples=["09:00"])
     coverage: CoverageType
@@ -54,6 +56,8 @@ class BookingOut(BaseModel):
     patient_name: str
     phone: str
     service_id: str
+    service_name: str = ""
+    deposit_amount: float = 0
     date: str
     time: str
     coverage: CoverageType

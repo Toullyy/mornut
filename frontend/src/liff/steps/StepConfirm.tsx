@@ -31,6 +31,8 @@ export default function StepConfirm({ form, clinicId, lineUserId, onSuccess, onB
         patient_name: form.patientName,
         phone: form.phone,
         service_id: form.serviceId,
+        service_name: form.serviceName,
+        deposit_amount: form.depositAmount,
         date: form.date,
         time: form.time,
         coverage: form.coverage,

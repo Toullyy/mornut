@@ -8,6 +8,8 @@ export interface BookingPayload {
   patient_name: string
   phone: string
   service_id: string
+  service_name: string
+  deposit_amount: number
   date: string
   time: string
   coverage: CoverageType

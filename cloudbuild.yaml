@@ -1,0 +1,59 @@
+# Cloud Build CI/CD — fires on push to main.
+# Set _REGION in Cloud Build trigger substitutions if needed.
+substitutions:
+  _REGION: asia-southeast1
+  _SERVICE: mornut-backend
+
+steps:
+  # 1. Run backend tests
+  - id: test-backend
+    name: python:3.12-slim
+    dir: backend
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        pip install -q -r requirements.txt -r requirements-dev.txt
+        pytest tests/ -q --tb=short
+
+  # 2. Build Docker image
+  - id: build-image
+    name: gcr.io/cloud-builders/docker
+    waitFor: [test-backend]
+    args:
+      - build
+      - -t
+      - gcr.io/$PROJECT_ID/${_SERVICE}:$COMMIT_SHA
+      - -t
+      - gcr.io/$PROJECT_ID/${_SERVICE}:latest
+      - backend/
+
+  # 3. Push to Container Registry
+  - id: push-image
+    name: gcr.io/cloud-builders/docker
+    waitFor: [build-image]
+    args: [push, --all-tags, gcr.io/$PROJECT_ID/${_SERVICE}]
+
+  # 4. Deploy to Cloud Run
+  - id: deploy-cloud-run
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    waitFor: [push-image]
+    args:
+      - gcloud
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=gcr.io/$PROJECT_ID/${_SERVICE}:$COMMIT_SHA
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated
+      - --min-instances=0
+      - --max-instances=3
+      - --port=8080
+
+images:
+  - gcr.io/$PROJECT_ID/${_SERVICE}:$COMMIT_SHA
+  - gcr.io/$PROJECT_ID/${_SERVICE}:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY
