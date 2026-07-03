@@ -21,13 +21,15 @@ export function useFirestoreCollection<T extends { id: string }>(
   const cancelledRef = useRef(false)
 
   const date = constraints.date ?? new Date().toISOString().split('T')[0]
+  const clinicId = constraints.clinicId ?? ''
 
   useEffect(() => {
     cancelledRef.current = false
 
     async function fetchData() {
       try {
-        const items = await apiFetch<T[]>(`/admin/bookings?date=${date}`)
+        const qs = clinicId ? `date=${date}&clinic_id=${clinicId}` : `date=${date}`
+        const items = await apiFetch<T[]>(`/admin/bookings?${qs}`)
         if (!cancelledRef.current) {
           setData(items)
           setLoading(false)
@@ -47,7 +49,7 @@ export function useFirestoreCollection<T extends { id: string }>(
       cancelledRef.current = true
       clearInterval(interval)
     }
-  }, [date])
+  }, [date, clinicId])
 
   return { data, loading, error }
 }

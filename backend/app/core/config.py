@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     # Internal: Cloud Scheduler uses this to authenticate POST /internal/remind
     scheduler_secret: str = ""
 
+    # CORS: comma-separated list of allowed origins for production
+    # e.g. ALLOWED_ORIGINS=https://app.example.com,https://www.example.com
+    allowed_origins: str = "http://localhost:5173,http://localhost:3000"
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 

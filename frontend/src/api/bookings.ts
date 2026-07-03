@@ -22,9 +22,14 @@ export interface BookingResult {
   time: string
   coverage: CoverageType
   patient_name: string
+  patient_line_id: string
   clinic_id: string
   service_id: string
+  service_name: string
+  deposit_amount: number
+  phone: string
   created_at: string
+  updated_at: string
 }
 
 export const createBooking = (payload: BookingPayload) =>

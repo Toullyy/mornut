@@ -37,14 +37,14 @@ type NavItem = 'dashboard' | 'appointments' | 'quota' | 'patients' | 'doctors' |
 
 interface Booking {
   id: string
-  patientName: string
+  patient_name: string
   phone: string
   time: string
-  serviceName: string
+  service_name: string
   coverage: Coverage
   status: Status
-  depositAmount: number
-  clinicId: string
+  deposit_amount: number
+  clinic_id: string
 }
 
 const CLINIC_ID =
@@ -158,7 +158,7 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
   const [filterCoverage, setFilterCoverage] = useState<Coverage | 'all'>('all')
 
   const filtered = bookings.filter(b => {
-    const matchSearch = b.patientName.includes(search) || b.phone.includes(search) || b.id.includes(search)
+    const matchSearch = b.patient_name.includes(search) || b.phone.includes(search) || b.id.includes(search)
     const matchStatus = filterStatus === 'all' || b.status === filterStatus
     const matchCov = filterCoverage === 'all' || b.coverage === filterCoverage
     return matchSearch && matchStatus && matchCov
@@ -166,7 +166,8 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
 
   const stats = {
     total: bookings.length,
-    confirmed: bookings.filter(b => b.status === 'confirmed' || b.status === 'reminded').length,
+    confirmed: bookings.filter(b => b.status === 'confirmed').length,
+    reminded: bookings.filter(b => b.status === 'reminded').length,
     done: bookings.filter(b => b.status === 'done').length,
     pending: bookings.filter(b => b.status === 'pending_slip').length,
     noShow: bookings.filter(b => b.status === 'no_show').length,
@@ -198,10 +199,11 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
         {[
           { label: 'ทั้งหมด', value: stats.total, accent: 'bg-green-100 text-green-700', icon: <CalendarDays size={16} /> },
           { label: 'ยืนยันแล้ว', value: stats.confirmed, accent: 'bg-emerald-100 text-emerald-700', icon: <CheckCircle2 size={16} /> },
+          { label: 'แจ้งเตือนแล้ว', value: stats.reminded, accent: 'bg-sky-100 text-sky-700', icon: <Bell size={16} /> },
           { label: 'เสร็จสิ้น', value: stats.done, accent: 'bg-slate-100 text-slate-500', icon: <BadgeCheck size={16} /> },
           { label: 'รอสลิป', value: stats.pending, accent: 'bg-yellow-100 text-yellow-600', icon: <Clock size={16} /> },
           { label: 'ไม่มา', value: stats.noShow, accent: 'bg-red-100 text-red-500', icon: <XCircle size={16} /> },
@@ -261,7 +263,55 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
         {loading && <p className="p-5 text-sm text-muted-foreground">กำลังโหลด...</p>}
         {error && <p className="p-5 text-sm text-destructive">ข้อผิดพลาด: {error.message}</p>}
 
-        <div className="overflow-x-auto">
+        {/* Mobile card list — shown below md breakpoint */}
+        <div className="md:hidden divide-y divide-border">
+          {!loading && filtered.length === 0 && (
+            <p className="text-center py-12 text-muted-foreground text-sm">ไม่พบข้อมูลที่ค้นหา</p>
+          )}
+          {filtered.map(b => {
+            const isTerminal = b.status === 'done' || b.status === 'cancelled' || b.status === 'no_show'
+            return (
+              <div key={b.id} className={`p-4 flex flex-col gap-2 ${isTerminal ? 'opacity-60' : ''}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono font-bold text-foreground text-sm">{b.time}</span>
+                  <StatusBadge status={b.status} />
+                </div>
+                <p className="font-semibold text-foreground">{b.patient_name}</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-muted-foreground font-mono">{b.phone}</span>
+                  <CoverageBadge coverage={b.coverage} />
+                  {b.deposit_amount > 0 && (
+                    <span className="text-xs font-mono text-foreground">฿{b.deposit_amount.toLocaleString()}</span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">{b.service_name}</p>
+                {!isTerminal && (
+                  <div className="flex gap-2 mt-1">
+                    {(b.status === 'confirmed' || b.status === 'reminded') && (
+                      <button
+                        onClick={() => onAction(b.id, 'done')}
+                        disabled={actionLoading !== null}
+                        className="flex-1 text-xs font-semibold bg-emerald-600 text-white px-3 py-2 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                      >
+                        {actionLoading === b.id + 'done' ? '...' : 'เสร็จ'}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => onAction(b.id, 'cancelled')}
+                      disabled={actionLoading !== null}
+                      className="flex-1 text-xs font-semibold bg-rose-600 text-white px-3 py-2 rounded-lg hover:bg-rose-700 disabled:opacity-50 transition-colors"
+                    >
+                      {actionLoading === b.id + 'cancelled' ? '...' : 'ยกเลิก'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Desktop table — hidden below md breakpoint */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-muted/50 border-b border-border">
@@ -286,21 +336,21 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
                       <span className="font-mono text-sm font-medium text-foreground">{b.time}</span>
                     </td>
                     <td className="px-4 py-3.5">
-                      <p className="font-medium text-foreground">{b.patientName}</p>
+                      <p className="font-medium text-foreground">{b.patient_name}</p>
                       <p className="text-xs text-muted-foreground font-mono mt-0.5">{b.phone}</p>
                     </td>
-                    <td className="px-4 py-3.5 text-foreground">{b.serviceName}</td>
+                    <td className="px-4 py-3.5 text-foreground">{b.service_name}</td>
                     <td className="px-4 py-3.5"><CoverageBadge coverage={b.coverage} /></td>
                     <td className="px-4 py-3.5">
-                      {b.depositAmount > 0
-                        ? <span className="font-mono text-sm text-foreground">฿{b.depositAmount.toLocaleString()}</span>
+                      {b.deposit_amount > 0
+                        ? <span className="font-mono text-sm text-foreground">฿{b.deposit_amount.toLocaleString()}</span>
                         : <span className="text-muted-foreground text-xs">—</span>}
                     </td>
                     <td className="px-4 py-3.5"><StatusBadge status={b.status} /></td>
                     <td className="px-4 py-3.5">
                       {!isTerminal && (
                         <div className="flex items-center justify-end gap-2">
-                          {b.status === 'confirmed' && (
+                          {(b.status === 'confirmed' || b.status === 'reminded') && (
                             <button
                               onClick={() => onAction(b.id, 'done')}
                               disabled={actionLoading !== null}
@@ -580,7 +630,7 @@ function PatientsView({ bookings }: { bookings: Booking[] }) {
     if (!acc.find(p => p.phone === b.phone)) acc.push(b)
     return acc
   }, [] as Booking[])
-  const filtered = uniquePatients.filter(p => p.patientName.includes(search) || p.phone.includes(search))
+  const filtered = uniquePatients.filter(p => p.patient_name.includes(search) || p.phone.includes(search))
 
   return (
     <div className="flex flex-col gap-6">
@@ -616,14 +666,14 @@ function PatientsView({ bookings }: { bookings: Booking[] }) {
                 <td className="px-4 py-3.5">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm">
-                      {p.patientName[0]}
+                      {p.patient_name[0]}
                     </div>
-                    <span className="font-medium text-foreground">{p.patientName}</span>
+                    <span className="font-medium text-foreground">{p.patient_name}</span>
                   </div>
                 </td>
                 <td className="px-4 py-3.5 font-mono text-sm text-muted-foreground">{p.phone}</td>
                 <td className="px-4 py-3.5"><CoverageBadge coverage={p.coverage} /></td>
-                <td className="px-4 py-3.5 text-muted-foreground text-sm">{p.serviceName}</td>
+                <td className="px-4 py-3.5 text-muted-foreground text-sm">{p.service_name}</td>
               </tr>
             ))}
             {filtered.length === 0 && (
@@ -775,7 +825,7 @@ export default function DashboardPage() {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
-  const constraints = useMemo(() => ({ date }), [date])
+  const constraints = useMemo(() => ({ date, clinicId: CLINIC_ID }), [date])
 
   const { data: bookings, loading: bLoading, error } = useFirestoreCollection<Booking>(
     'bookings',
@@ -796,6 +846,7 @@ export default function DashboardPage() {
 
   const pendingCount = bookings.filter(b => b.status === 'pending_slip').length
   const confirmedCount = bookings.filter(b => b.status === 'confirmed' || b.status === 'reminded').length
+  const remindedCount = bookings.filter(b => b.status === 'reminded').length
 
   const navItems: { id: NavItem; label: string; icon: React.ReactNode }[] = [
     { id: 'dashboard', label: 'ภาพรวมคิว', icon: <LayoutDashboard size={16} /> },
@@ -881,7 +932,12 @@ export default function DashboardPage() {
               )}
               {confirmedCount > 0 && (
                 <span className="flex items-center gap-1.5 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full font-medium">
-                  <UserCheck size={11} />ยืนยัน {confirmedCount}
+                  <UserCheck size={11} />ยืนยัน {confirmedCount - remindedCount}
+                </span>
+              )}
+              {remindedCount > 0 && (
+                <span className="flex items-center gap-1.5 text-xs bg-sky-50 text-sky-700 border border-sky-200 px-2.5 py-1 rounded-full font-medium">
+                  <Bell size={11} />แจ้งเตือนแล้ว {remindedCount}
                 </span>
               )}
             </div>

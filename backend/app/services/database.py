@@ -288,3 +288,17 @@ def mark_reminded(booking_id: str) -> None:
                 "UPDATE bookings SET status = 'reminded', updated_at = NOW() WHERE id = %s",
                 (booking_id,),
             )
+
+
+def get_patient_bookings(patient_line_id: str) -> list[dict]:
+    """Return upcoming (confirmed/reminded) bookings for a LINE user, newest first."""
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "SELECT * FROM bookings "
+                "WHERE patient_line_id = %s AND status IN ('confirmed', 'reminded') "
+                "ORDER BY date ASC, time ASC "
+                "LIMIT 5",
+                (patient_line_id,),
+            )
+            return [_row_to_booking(dict(r)) for r in cur.fetchall()]

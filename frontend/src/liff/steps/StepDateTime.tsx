@@ -12,7 +12,7 @@ const today = new Date().toISOString().split('T')[0]
 const maxDate = new Date(Date.now() + 30 * 86_400_000).toISOString().split('T')[0]
 
 export default function StepDateTime({ clinicId, onSelect, onBack }: Props) {
-  const [date, setDate] = useState('')
+  const [date, setDate] = useState(today)
   const [slots, setSlots] = useState<Slot[]>([])
   const [loadingSlots, setLoadingSlots] = useState(false)
   const [slotError, setSlotError] = useState<string | null>(null)
