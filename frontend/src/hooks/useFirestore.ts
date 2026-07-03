@@ -1,6 +1,5 @@
-import { collection, onSnapshot, query, QueryConstraint } from 'firebase/firestore'
-import { useEffect, useState } from 'react'
-import { db } from '../lib/firebase'
+import { useEffect, useRef, useState } from 'react'
+import { apiFetch } from '../lib/api'
 
 interface UseCollectionResult<T> {
   data: T[]
@@ -9,34 +8,46 @@ interface UseCollectionResult<T> {
 }
 
 /**
- * Real-time Firestore collection listener.
- * Re-subscribes whenever `collectionName` changes.
- * Pass stable `constraints` (memoised with useMemo) to avoid churn.
+ * Polls GET /admin/bookings?date=... every 30 seconds.
+ * Drop-in replacement for the old useFirestoreCollection hook.
  */
 export function useFirestoreCollection<T extends { id: string }>(
-  collectionName: string,
-  constraints: QueryConstraint[] = [],
+  _collectionName: string,
+  constraints: { date?: string; clinicId?: string } = {},
 ): UseCollectionResult<T> {
   const [data, setData] = useState<T[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
+  const cancelledRef = useRef(false)
+
+  const date = constraints.date ?? new Date().toISOString().split('T')[0]
 
   useEffect(() => {
-    const q = query(collection(db, collectionName), ...constraints)
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        setData(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as T))
-        setLoading(false)
-      },
-      (err) => {
-        setError(err as Error)
-        setLoading(false)
-      },
-    )
-    return unsubscribe
-    // constraints MUST be memoised by the caller (useMemo) so this dep is stable
-  }, [collectionName, constraints])
+    cancelledRef.current = false
+
+    async function fetchData() {
+      try {
+        const items = await apiFetch<T[]>(`/admin/bookings?date=${date}`)
+        if (!cancelledRef.current) {
+          setData(items)
+          setLoading(false)
+          setError(null)
+        }
+      } catch (e) {
+        if (!cancelledRef.current) {
+          setError(e as Error)
+          setLoading(false)
+        }
+      }
+    }
+
+    fetchData()
+    const interval = setInterval(fetchData, 30_000)
+    return () => {
+      cancelledRef.current = true
+      clearInterval(interval)
+    }
+  }, [date])
 
   return { data, loading, error }
 }

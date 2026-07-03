@@ -1,24 +1,25 @@
+"""Local file storage for slip images (replaces Firebase Storage)."""
 import asyncio
+import os
 from datetime import datetime, timezone
+from pathlib import Path
 
-from firebase_admin import storage as fb_storage
-
-from app.services.firestore import get_db  # ensures firebase_admin is initialized
+UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "uploads" / "slips"
 
 
 async def upload_slip(booking_id: str, file_bytes: bytes, content_type: str) -> str:
-    """Upload slip image bytes to Firebase Storage.
+    """Save slip image to local disk.
 
-    Returns the gs:// storage path (not a public URL — only the backend accesses it).
+    Returns the relative storage path stored in the database.
     """
-    get_db()  # guarantee firebase_admin.initialize_app has run
     ext = (content_type.split("/")[-1] or "jpg").replace("jpeg", "jpg")
     ts = int(datetime.now(timezone.utc).timestamp())
-    path = f"slips/{booking_id}/{ts}.{ext}"
-    await asyncio.to_thread(_upload_sync, path, file_bytes, content_type)
-    return path
+    relative_path = f"{booking_id}/{ts}.{ext}"
+    await asyncio.to_thread(_save_file, relative_path, file_bytes)
+    return relative_path
 
 
-def _upload_sync(path: str, data: bytes, content_type: str) -> None:
-    blob = fb_storage.bucket().blob(path)
-    blob.upload_from_string(data, content_type=content_type)
+def _save_file(relative_path: str, data: bytes) -> None:
+    dest = UPLOAD_DIR / relative_path
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(data)

@@ -11,14 +11,17 @@ class Settings(BaseSettings):
     slipok_api_key: str
     slipok_endpoint: str
 
-    # Firebase
-    firebase_project_id: str
-    google_application_credentials: str = ""
-    firebase_storage_bucket: str = ""   # defaults to {project_id}.appspot.com
+    # PostgreSQL
+    database_url: str  # postgresql://user:password@host:5432/dbname
+
+    # JWT (admin authentication)
+    jwt_secret: str
+    jwt_algorithm: str = "HS256"
+    jwt_expire_hours: int = 24
 
     # Clinic (one LINE OA = one clinic for MVP)
     clinic_id: str = ""
-    liff_url: str = ""   # https://liff.line.me/{your_liff_id}
+    liff_url: str = ""
 
     # Internal: Cloud Scheduler uses this to authenticate POST /internal/remind
     scheduler_secret: str = ""

@@ -1,6 +1,4 @@
 import { useMemo, useState } from 'react'
-import { signOut } from 'firebase/auth'
-import { orderBy, where } from 'firebase/firestore'
 import {
   LayoutDashboard,
   CalendarDays,
@@ -27,7 +25,6 @@ import {
   CreditCard,
   FileText,
 } from 'lucide-react'
-import { auth } from '../lib/firebase'
 import { useAuth } from '../hooks/useAuth'
 import { useFirestoreCollection } from '../hooks/useFirestore'
 import AdminLogin from './AdminLogin'
@@ -773,15 +770,12 @@ function SettingsView() {
 
 // ── Main Dashboard ─────────────────────────────────────────────────────────
 export default function DashboardPage() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, loading: authLoading, logout, onLogin } = useAuth()
   const [activeNav, setActiveNav] = useState<NavItem>('dashboard')
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
-  const constraints = useMemo(
-    () => [where('date', '==', date), orderBy('time', 'asc')],
-    [date],
-  )
+  const constraints = useMemo(() => ({ date }), [date])
 
   const { data: bookings, loading: bLoading, error } = useFirestoreCollection<Booking>(
     'bookings',
@@ -789,7 +783,7 @@ export default function DashboardPage() {
   )
 
   if (authLoading) return <FullPage>กำลังโหลด...</FullPage>
-  if (!user) return <AdminLogin />
+  if (!user) return <AdminLogin onLogin={onLogin} />
 
   async function handleAction(bookingId: string, action: 'done' | 'cancelled') {
     setActionLoading(bookingId + action)
@@ -861,7 +855,7 @@ export default function DashboardPage() {
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold text-foreground truncate">{user.email ?? 'แอดมิน'}</p>
               <button
-                onClick={() => signOut(auth)}
+                onClick={logout}
                 className="text-[10px] text-muted-foreground hover:text-destructive transition-colors"
               >
                 ออกจากระบบ

@@ -1,15 +1,43 @@
-import asyncio
 import base64
 import hashlib
 import hmac
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-import httpx
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from firebase_admin import auth as fb_auth
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+
+from app.core.config import settings
 
 _bearer = HTTPBearer(auto_error=False)
+_pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+# ── Password helpers ──────────────────────────────────────────────────────────
+
+def hash_password(plain: str) -> str:
+    return _pwd.hash(plain)
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    return _pwd.verify(plain, hashed)
+
+
+# ── JWT ───────────────────────────────────────────────────────────────────────
+
+def create_access_token(email: str) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(hours=settings.jwt_expire_hours)
+    payload = {"sub": email, "exp": expire}
+    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def decode_access_token(token: str) -> dict:
+    try:
+        return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    except JWTError as exc:
+        raise HTTPException(status_code=401, detail="Invalid or expired token") from exc
 
 
 # ── LINE webhook ──────────────────────────────────────────────────────────────
@@ -28,16 +56,15 @@ def verify_line_signature(body: bytes, signature: str, channel_secret: str) -> N
 
 # ── LIFF / patient API ────────────────────────────────────────────────────────
 
+import httpx
+
+
 async def get_line_user_id(
     credentials: Annotated[
         HTTPAuthorizationCredentials | None, Depends(_bearer)
     ] = None,
 ) -> str:
-    """FastAPI dependency: verify a LIFF access token and return the LINE user ID.
-
-    The LIFF app passes `Authorization: Bearer <liff_access_token>`.
-    We call LINE's profile API to validate and extract the user ID.
-    """
+    """Verify a LIFF access token and return the LINE user ID."""
     if credentials is None:
         raise HTTPException(status_code=401, detail="Missing Authorization header")
 
@@ -53,24 +80,14 @@ async def get_line_user_id(
     return resp.json()["userId"]
 
 
-# ── Admin API (Firebase ID token) ─────────────────────────────────────────────
+# ── Admin API (JWT) ───────────────────────────────────────────────────────────
 
 async def get_admin_user(
     credentials: Annotated[
         HTTPAuthorizationCredentials | None, Depends(_bearer)
     ] = None,
 ) -> dict:
-    """FastAPI dependency: verify a Firebase ID token and return the decoded claims.
-
-    The admin dashboard signs in with Firebase email/password then passes
-    `Authorization: Bearer <firebase_id_token>` to protected admin endpoints.
-    """
+    """Verify a JWT and return the decoded payload."""
     if credentials is None:
         raise HTTPException(status_code=401, detail="Missing Authorization header")
-    try:
-        decoded: dict = await asyncio.to_thread(
-            fb_auth.verify_id_token, credentials.credentials
-        )
-        return decoded
-    except Exception as exc:
-        raise HTTPException(status_code=401, detail="Invalid or expired Firebase token") from exc
+    return decode_access_token(credentials.credentials)

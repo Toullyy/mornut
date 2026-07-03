@@ -1,18 +1,46 @@
-import { onAuthStateChanged, User } from 'firebase/auth'
 import { useEffect, useState } from 'react'
-import { auth } from '../lib/firebase'
+import { clearToken, getToken } from '../lib/api'
+
+export interface AuthUser {
+  email: string
+}
+
+function decodeToken(token: string): AuthUser | null {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    if (!payload.sub) return null
+    return { email: payload.sub as string }
+  } catch {
+    return null
+  }
+}
 
 export function useAuth() {
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser] = useState<AuthUser | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u)
-      setLoading(false)
-    })
-    return unsub
+    const token = getToken()
+    if (token) {
+      const u = decodeToken(token)
+      if (u) {
+        setUser(u)
+      } else {
+        clearToken()
+      }
+    }
+    setLoading(false)
   }, [])
 
-  return { user, loading }
+  function logout() {
+    clearToken()
+    setUser(null)
+    window.location.reload()
+  }
+
+  function onLogin(user: AuthUser) {
+    setUser(user)
+  }
+
+  return { user, loading, logout, onLogin }
 }

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import httpx
 from fastapi import HTTPException, UploadFile
 
-from app.services import firestore as repo
+from app.services import database as repo
 from app.services import line as line_svc
 from app.services import slipok
 from app.services import storage as storage_svc
@@ -31,7 +31,7 @@ async def verify(booking_id: str, file: UploadFile) -> dict:
             409, f"สถานะการจองคือ '{raw.get('status')}' ไม่สามารถยืนยันสลิปได้"
         )
 
-    deposit = float(raw.get("depositAmount", 0))
+    deposit = float(raw.get("deposit_amount", 0))
 
     # ── 3. Call SlipOK ──────────────────────────────────────────────────────
     filename = file.filename or "slip.jpg"
@@ -60,7 +60,7 @@ async def verify(booking_id: str, file: UploadFile) -> dict:
     if trans_ref and await asyncio.to_thread(repo.is_trans_ref_used, trans_ref):
         raise HTTPException(422, "สลิปนี้ถูกใช้ไปแล้ว กรุณาส่งสลิปใหม่")
 
-    # ── 5. Upload slip image to Firebase Storage ────────────────────────────
+    # ── 5. Save slip image ──────────────────────────────────────────────────
     storage_path = await storage_svc.upload_slip(booking_id, file_bytes, content_type)
 
     # ── 6. Update booking → confirmed ───────────────────────────────────────
@@ -69,33 +69,33 @@ async def verify(booking_id: str, file: UploadFile) -> dict:
         booking_id,
         {
             "status": "confirmed",
-            "slip.url": storage_path,
-            "slip.verified": True,
-            "slip.amount": amount,
-            "slip.transRef": trans_ref,
-            "slip.verifiedAt": datetime.now(timezone.utc),
+            "slip_url": storage_path,
+            "slip_verified": True,
+            "slip_amount": amount,
+            "slip_trans_ref": trans_ref or None,
+            "slip_verified_at": datetime.now(timezone.utc),
         },
     )
 
     # ── 7. Notify patient + nurses concurrently ─────────────────────────────
     await asyncio.gather(
         line_svc.push_booking_confirmed(
-            user_id=raw.get("patientLineId", ""),
+            user_id=raw.get("patient_line_id", ""),
             booking_id=booking_id,
-            patient_name=raw.get("patientName", ""),
+            patient_name=raw.get("patient_name", ""),
             date=raw.get("date", ""),
             time=raw.get("time", ""),
-            service_name=raw.get("serviceName", ""),
+            service_name=raw.get("service_name", ""),
         ),
         line_svc.send_line_notify(
             f"\n✅ จองยืนยันแล้ว\n"
-            f"ชื่อ: {raw.get('patientName', '')}\n"
-            f"บริการ: {raw.get('serviceName', '')}\n"
+            f"ชื่อ: {raw.get('patient_name', '')}\n"
+            f"บริการ: {raw.get('service_name', '')}\n"
             f"วันที่: {raw.get('date', '')} เวลา: {raw.get('time', '')} น.\n"
             f"มัดจำ: ฿{amount:,.0f}\n"
             f"รหัส: ...{booking_id[-8:].upper()}"
         ),
-        return_exceptions=True,  # booking is confirmed even if LINE push fails
+        return_exceptions=True,
     )
 
     return {"booking_id": booking_id, "status": "confirmed", "amount": amount, "trans_ref": trans_ref}

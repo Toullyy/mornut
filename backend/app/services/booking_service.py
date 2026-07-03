@@ -1,15 +1,11 @@
-"""Business logic for bookings.
-
-All Firestore calls (sync) are run via asyncio.to_thread so the event loop
-is never blocked. LINE API calls (async) are awaited directly.
-"""
+"""Business logic for bookings — database calls run via asyncio.to_thread."""
 import asyncio
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
 
 from app.models.booking import BookingCreate, BookingOut, BookingUpdate, SlipInfo
-from app.services import firestore as repo
+from app.services import database as repo
 from app.services.line import push_text
 
 
@@ -58,13 +54,11 @@ async def update(booking_id: str, payload: BookingUpdate) -> BookingOut:
     if payload.status is not None:
         changes["status"] = payload.status
     if payload.slip is not None:
-        changes["slip"] = {
-            "url": payload.slip.url,
-            "verified": payload.slip.verified,
-            "amount": payload.slip.amount,
-            "transRef": payload.slip.trans_ref,
-            "verifiedAt": payload.slip.verified_at,
-        }
+        changes["slip_url"] = payload.slip.url
+        changes["slip_verified"] = payload.slip.verified
+        changes["slip_amount"] = payload.slip.amount
+        changes["slip_trans_ref"] = payload.slip.trans_ref
+        changes["slip_verified_at"] = payload.slip.verified_at
     if changes:
         await asyncio.to_thread(repo.update_booking, booking_id, changes)
 
@@ -78,11 +72,10 @@ async def cancel(booking_id: str) -> None:
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
-    # Notify the patient their booking was cancelled
     raw = await asyncio.to_thread(repo.get_booking, booking_id)
     if raw:
         await push_text(
-            raw["patientLineId"],
+            raw["patient_line_id"],
             f"การจองของคุณ ({raw['date']} เวลา {raw['time']} น.) ถูกยกเลิกแล้ว",
         )
 
@@ -90,32 +83,31 @@ async def cancel(booking_id: str) -> None:
 # ── Internal helper ───────────────────────────────────────────────────────────
 
 def _to_out(raw: dict) -> BookingOut:
-    """Map a Firestore document (camelCase) to BookingOut (snake_case)."""
-    slip_raw = raw.get("slip")
+    """Map a DB row (snake_case) to BookingOut."""
     slip = None
-    if slip_raw:
+    if raw.get("slip_url"):
         slip = SlipInfo(
-            url=slip_raw.get("url", ""),
-            verified=slip_raw.get("verified", False),
-            amount=slip_raw.get("amount"),
-            trans_ref=slip_raw.get("transRef"),
-            verified_at=slip_raw.get("verifiedAt"),
+            url=raw["slip_url"],
+            verified=raw.get("slip_verified", False),
+            amount=raw.get("slip_amount"),
+            trans_ref=raw.get("slip_trans_ref"),
+            verified_at=raw.get("slip_verified_at"),
         )
     now = datetime.now(timezone.utc)
     return BookingOut(
-        id=raw["id"],
-        clinic_id=raw.get("clinicId", ""),
-        patient_line_id=raw.get("patientLineId", ""),
-        patient_name=raw.get("patientName", ""),
+        id=str(raw["id"]),
+        clinic_id=raw.get("clinic_id", ""),
+        patient_line_id=raw.get("patient_line_id", ""),
+        patient_name=raw.get("patient_name", ""),
         phone=raw.get("phone", ""),
-        service_id=raw.get("serviceId", ""),
-        service_name=raw.get("serviceName", ""),
-        deposit_amount=float(raw.get("depositAmount", 0)),
+        service_id=raw.get("service_id", ""),
+        service_name=raw.get("service_name", ""),
+        deposit_amount=float(raw.get("deposit_amount", 0)),
         date=raw["date"],
         time=raw["time"],
         coverage=raw["coverage"],
         status=raw["status"],
         slip=slip,
-        created_at=raw.get("createdAt", now),
-        updated_at=raw.get("updatedAt", now),
+        created_at=raw.get("created_at", now),
+        updated_at=raw.get("updated_at", now),
     )

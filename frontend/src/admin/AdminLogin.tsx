@@ -1,8 +1,13 @@
 import { useState } from 'react'
-import { signInWithEmailAndPassword } from 'firebase/auth'
-import { auth } from '../lib/firebase'
+import { Activity } from 'lucide-react'
+import { apiFetch, setToken } from '../lib/api'
+import type { AuthUser } from '../hooks/useAuth'
 
-export default function AdminLogin() {
+interface Props {
+  onLogin: (user: AuthUser) => void
+}
+
+export default function AdminLogin({ onLogin }: Props) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -13,7 +18,12 @@ export default function AdminLogin() {
     setLoading(true)
     setError('')
     try {
-      await signInWithEmailAndPassword(auth, email, password)
+      const res = await apiFetch<{ access_token: string }>('/admin/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      })
+      setToken(res.access_token)
+      onLogin({ email })
     } catch {
       setError('อีเมลหรือรหัสผ่านไม่ถูกต้อง')
     } finally {
@@ -21,103 +31,51 @@ export default function AdminLogin() {
     }
   }
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%',
-    padding: '10px 12px',
-    border: '1px solid #ddd',
-    borderRadius: 8,
-    fontSize: 15,
-    marginBottom: 16,
-    boxSizing: 'border-box',
-    outline: 'none',
-  }
-
   return (
-    <div
-      style={{
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        minHeight: '100vh',
-        background: '#F5F7FA',
-        fontFamily: 'system-ui, sans-serif',
-      }}
-    >
-      <div
-        style={{
-          background: '#fff',
-          borderRadius: 16,
-          padding: 36,
-          width: 360,
-          boxShadow: '0 4px 24px rgba(0,0,0,0.10)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 28 }}>
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 8,
-              background: '#06C755',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#fff',
-              fontWeight: 700,
-              fontSize: 18,
-            }}
-          >
-            M
+    <div className="flex justify-center items-center min-h-screen bg-background">
+      <div className="bg-card border border-border rounded-2xl p-9 w-88 shadow-lg">
+        <div className="flex items-center gap-2.5 mb-7">
+          <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
+            <Activity size={18} className="text-white" />
           </div>
-          <span style={{ fontWeight: 700, fontSize: 18, color: '#333' }}>หมอนัด Admin</span>
+          <span className="font-bold text-foreground text-lg" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+            MorNut Admin
+          </span>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <label style={{ display: 'block', marginBottom: 4, fontSize: 13, color: '#555', fontWeight: 600 }}>
-            อีเมล
-          </label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            style={inputStyle}
-            placeholder="admin@clinic.com"
-            required
-            autoComplete="username"
-          />
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div>
+            <label className="block text-xs font-semibold text-muted-foreground mb-1.5">อีเมล</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="admin@clinic.com"
+              required
+              autoComplete="username"
+              className="w-full px-3 py-2.5 text-sm bg-input-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring/30"
+            />
+          </div>
 
-          <label style={{ display: 'block', marginBottom: 4, fontSize: 13, color: '#555', fontWeight: 600 }}>
-            รหัสผ่าน
-          </label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            style={{ ...inputStyle, marginBottom: error ? 8 : 24 }}
-            placeholder="••••••••"
-            required
-            autoComplete="current-password"
-          />
+          <div>
+            <label className="block text-xs font-semibold text-muted-foreground mb-1.5">รหัสผ่าน</label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+              autoComplete="current-password"
+              className="w-full px-3 py-2.5 text-sm bg-input-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring/30"
+            />
+          </div>
 
-          {error && (
-            <p style={{ color: '#d32f2f', fontSize: 13, margin: '0 0 16px' }}>{error}</p>
-          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
           <button
             type="submit"
             disabled={loading}
-            style={{
-              width: '100%',
-              background: loading ? '#a5d6b5' : '#06C755',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 8,
-              padding: '12px',
-              fontSize: 16,
-              fontWeight: 700,
-              cursor: loading ? 'not-allowed' : 'pointer',
-              transition: 'background 0.2s',
-            }}
+            className="w-full bg-primary text-primary-foreground font-semibold py-3 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors text-sm mt-1"
           >
             {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
           </button>
