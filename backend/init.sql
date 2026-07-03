@@ -66,3 +66,24 @@ CREATE INDEX IF NOT EXISTS idx_bookings_date        ON bookings(date);
 CREATE INDEX IF NOT EXISTS idx_bookings_clinic_date ON bookings(clinic_id, date);
 CREATE INDEX IF NOT EXISTS idx_bookings_trans_ref   ON bookings(slip_trans_ref)
     WHERE slip_trans_ref IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS doctors (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    clinic_id   TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    specialty   TEXT NOT NULL DEFAULT '',
+    color       TEXT NOT NULL DEFAULT 'bg-sky-500',
+    initials    TEXT NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_doctors_clinic ON doctors(clinic_id);
+
+CREATE TABLE IF NOT EXISTS doctor_shifts (
+    id          SERIAL PRIMARY KEY,
+    doctor_id   UUID NOT NULL REFERENCES doctors(id) ON DELETE CASCADE,
+    day_of_week INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
+    morning     BOOLEAN NOT NULL DEFAULT FALSE,
+    afternoon   BOOLEAN NOT NULL DEFAULT FALSE,
+    UNIQUE (doctor_id, day_of_week)
+);

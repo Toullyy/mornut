@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   LayoutDashboard,
   CalendarDays,
@@ -24,11 +24,27 @@ import {
   ChevronUp,
   CreditCard,
   FileText,
+  Trash2,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useFirestoreCollection } from '../hooks/useFirestore'
 import AdminLogin from './AdminLogin'
-import { updateBookingStatus, setQuota, type QuotaLimits } from './api'
+import {
+  updateBookingStatus,
+  setQuota,
+  type QuotaLimits,
+  fetchDoctors,
+  createDoctor as apiCreateDoctor,
+  deleteDoctor as apiDeleteDoctor,
+  updateDoctorShifts,
+  createAdminBooking,
+  fetchServices,
+  fetchSlots,
+  type Doctor as ApiDoctor,
+  type DoctorCreate,
+  type ServiceItem,
+  type SlotItem,
+} from './api'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 type Coverage = 'cash' | 'sso' | 'universal'
@@ -47,10 +63,27 @@ interface Booking {
   clinic_id: string
 }
 
+type ShiftState = { doctorId: string; day: string; morning: boolean; afternoon: boolean }
+
 const CLINIC_ID =
   new URLSearchParams(window.location.search).get('clinicId') ||
   import.meta.env.VITE_CLINIC_ID ||
   ''
+
+// All color strings here so Tailwind's content scanner includes them in the bundle
+const DOCTOR_COLORS = [
+  'bg-sky-500',
+  'bg-violet-500',
+  'bg-amber-500',
+  'bg-rose-500',
+  'bg-emerald-500',
+  'bg-indigo-500',
+  'bg-teal-500',
+  'bg-orange-500',
+]
+
+const DAYS = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์']
+const DAY_SHORT = ['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.']
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const coverageLabel: Record<Coverage, string> = { cash: 'เงินสด', sso: 'ประกันสังคม', universal: 'บัตรทอง' }
@@ -127,24 +160,369 @@ function SettingsRow({ label, hint, children }: { label: string; hint?: string; 
   )
 }
 
-// ── Doctor Schedule (UI mock — backend not yet implemented) ────────────────
-const doctors = [
-  { id: 'D1', name: 'นพ. อรรถพล สุวรรณรัตน์', specialty: 'อายุรกรรม', color: 'bg-sky-500', initials: 'อร' },
-  { id: 'D2', name: 'พญ. ปริยา มหาสวัสดิ์', specialty: 'กุมารเวช', color: 'bg-violet-500', initials: 'ปร' },
-  { id: 'D3', name: 'นพ. ธนิต ชัยประเสริฐ', specialty: 'กายภาพบำบัด', color: 'bg-amber-500', initials: 'ธน' },
-  { id: 'D4', name: 'พญ. สุภาพร วงศ์วิไล', specialty: 'จักษุ', color: 'bg-rose-500', initials: 'สภ' },
-]
-const DAYS = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์']
-const DAY_SHORT = ['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.']
+// ── Add Queue Modal ────────────────────────────────────────────────────────
 
-type DoctorShift = { doctorId: string; day: string; morning: boolean; afternoon: boolean }
-const initialShifts: DoctorShift[] = DAYS.flatMap(day =>
-  doctors.map(d => ({ doctorId: d.id, day, morning: Math.random() > 0.4, afternoon: Math.random() > 0.5 }))
-)
+function AddQueueModal({
+  date: initialDate,
+  clinicId,
+  onClose,
+  onCreated,
+}: {
+  date: string
+  clinicId: string
+  onClose: () => void
+  onCreated: () => void
+}) {
+  const [form, setForm] = useState({
+    patient_name: '',
+    phone: '',
+    date: initialDate,
+    time: '',
+    service_id: '',
+    service_name: '',
+    coverage: 'cash' as Coverage,
+    deposit_amount: 0,
+  })
+  const [services, setServices] = useState<ServiceItem[]>([])
+  const [slots, setSlots] = useState<SlotItem[]>([])
+  const [loadingServices, setLoadingServices] = useState(true)
+  const [loadingSlots, setLoadingSlots] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!clinicId) { setLoadingServices(false); return }
+    fetchServices(clinicId)
+      .then(setServices)
+      .catch(e => setError((e as Error).message))
+      .finally(() => setLoadingServices(false))
+  }, [clinicId])
+
+  useEffect(() => {
+    if (!clinicId || !form.date) return
+    setLoadingSlots(true)
+    setForm(f => ({ ...f, time: '' }))
+    fetchSlots(clinicId, form.date)
+      .then(s => setSlots(s.filter(sl => sl.available > 0)))
+      .catch(e => setError((e as Error).message))
+      .finally(() => setLoadingSlots(false))
+  }, [form.date, clinicId])
+
+  useEffect(() => {
+    const svc = services.find(s => s.id === form.service_id)
+    if (svc) setForm(f => ({ ...f, service_name: svc.name, deposit_amount: svc.deposit_amount }))
+  }, [form.service_id, services])
+
+  const isValid =
+    form.patient_name.trim().length > 0 &&
+    form.phone.trim().length >= 9 &&
+    form.date.length > 0 &&
+    form.time.length > 0 &&
+    form.service_id.length > 0
+
+  const handleSubmit = async () => {
+    if (!isValid) return
+    setSubmitting(true)
+    setError('')
+    try {
+      await createAdminBooking({
+        patient_name: form.patient_name.trim(),
+        phone: form.phone.trim(),
+        service_id: form.service_id,
+        service_name: form.service_name,
+        date: form.date,
+        time: form.time,
+        coverage: form.coverage,
+        deposit_amount: form.deposit_amount,
+        clinic_id: clinicId,
+      })
+      onCreated()
+    } catch (e) {
+      setError((e as Error).message)
+      setSubmitting(false)
+    }
+  }
+
+  const field = 'w-full text-sm bg-input-background border border-border rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-ring/30'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-card border border-border rounded-2xl shadow-xl w-full max-w-md mx-4 max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
+          <h2 className="font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>เพิ่มคิวใหม่</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 flex flex-col gap-4 overflow-y-auto">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">ชื่อ-นามสกุล <span className="text-destructive">*</span></label>
+              <input
+                type="text"
+                placeholder="ชื่อผู้ป่วย"
+                value={form.patient_name}
+                onChange={e => setForm(f => ({ ...f, patient_name: e.target.value }))}
+                className={field}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">เบอร์โทร <span className="text-destructive">*</span></label>
+              <input
+                type="tel"
+                placeholder="08x-xxx-xxxx"
+                value={form.phone}
+                onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+                className={`${field} font-mono`}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-muted-foreground">วันที่</label>
+            <input
+              type="date"
+              value={form.date}
+              onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
+              className={field}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-muted-foreground">บริการ <span className="text-destructive">*</span></label>
+            <select
+              value={form.service_id}
+              onChange={e => setForm(f => ({ ...f, service_id: e.target.value }))}
+              disabled={loadingServices}
+              className={field}
+            >
+              <option value="">{loadingServices ? 'กำลังโหลด...' : 'เลือกบริการ'}</option>
+              {services.map(svc => (
+                <option key={svc.id} value={svc.id}>{svc.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">เวลา <span className="text-destructive">*</span></label>
+              <select
+                value={form.time}
+                onChange={e => setForm(f => ({ ...f, time: e.target.value }))}
+                disabled={loadingSlots}
+                className={`${field} font-mono`}
+              >
+                <option value="">
+                  {loadingSlots ? 'กำลังโหลด...' : slots.length === 0 ? 'ไม่มีช่องว่าง' : 'เลือกเวลา'}
+                </option>
+                {slots.map(sl => (
+                  <option key={sl.time} value={sl.time}>{sl.time} (ว่าง {sl.available})</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">สิทธิ์การรักษา</label>
+              <select
+                value={form.coverage}
+                onChange={e => setForm(f => ({ ...f, coverage: e.target.value as Coverage }))}
+                className={field}
+              >
+                <option value="cash">เงินสด</option>
+                <option value="sso">ประกันสังคม</option>
+                <option value="universal">บัตรทอง</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-muted-foreground">มัดจำ (บาท)</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">฿</span>
+              <input
+                type="number"
+                value={form.deposit_amount}
+                onChange={e => setForm(f => ({ ...f, deposit_amount: Number(e.target.value) }))}
+                min={0}
+                className={`${field} pl-7 font-mono`}
+              />
+            </div>
+          </div>
+
+          {error && (
+            <p className="text-sm text-destructive bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border shrink-0">
+          <button
+            onClick={onClose}
+            className="text-sm text-muted-foreground hover:text-foreground px-4 py-2 rounded-lg hover:bg-muted transition-colors"
+          >
+            ยกเลิก
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!isValid || submitting}
+            className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-5 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          >
+            <Plus size={14} />
+            {submitting ? 'กำลังเพิ่ม...' : 'เพิ่มคิว'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Add Doctor Modal ───────────────────────────────────────────────────────
+
+function computeInitials(name: string): string {
+  const cleaned = name.replace(/^(นพ\.|พญ\.|ดร\.|ผศ\.ดร\.|รศ\.ดร\.)\s*/u, '').trim()
+  return cleaned.substring(0, 2)
+}
+
+function AddDoctorModal({
+  clinicId,
+  onClose,
+  onCreated,
+}: {
+  clinicId: string
+  onClose: () => void
+  onCreated: (doc: ApiDoctor) => void
+}) {
+  const [form, setForm] = useState<DoctorCreate>({
+    name: '',
+    specialty: '',
+    color: DOCTOR_COLORS[0],
+    initials: '',
+  })
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+
+  const isValid = form.name.trim().length > 0 && form.specialty.trim().length > 0
+
+  const handleSubmit = async () => {
+    if (!isValid) return
+    setSubmitting(true)
+    setError('')
+    try {
+      const initials = form.initials.trim() || computeInitials(form.name)
+      const newDoc = await apiCreateDoctor(clinicId, { ...form, initials })
+      onCreated(newDoc)
+    } catch (e) {
+      setError((e as Error).message)
+      setSubmitting(false)
+    }
+  }
+
+  const field = 'w-full text-sm bg-input-background border border-border rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-ring/30'
+  const preview = form.initials.trim() || (form.name ? computeInitials(form.name) : '?')
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-card border border-border rounded-2xl shadow-xl w-full max-w-sm mx-4">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+          <h2 className="font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>เพิ่มแพทย์ใหม่</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-muted-foreground">ชื่อ-นามสกุล <span className="text-destructive">*</span></label>
+            <input
+              type="text"
+              placeholder="เช่น นพ. สมชาย ใจดี"
+              value={form.name}
+              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              className={field}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-muted-foreground">ความเชี่ยวชาญ <span className="text-destructive">*</span></label>
+            <input
+              type="text"
+              placeholder="เช่น อายุรกรรม"
+              value={form.specialty}
+              onChange={e => setForm(f => ({ ...f, specialty: e.target.value }))}
+              className={field}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-muted-foreground">อักษรย่อ (ไม่เกิน 2 ตัว)</label>
+            <input
+              type="text"
+              placeholder={form.name ? computeInitials(form.name) : 'อก'}
+              value={form.initials}
+              onChange={e => setForm(f => ({ ...f, initials: e.target.value.substring(0, 2) }))}
+              maxLength={2}
+              className={`${field} w-24 font-mono`}
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-medium text-muted-foreground">สีประจำตัว</label>
+            <div className="flex gap-2 flex-wrap">
+              {DOCTOR_COLORS.map(color => (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, color }))}
+                  className={`w-8 h-8 rounded-full ${color} transition-all ${
+                    form.color === color
+                      ? 'ring-2 ring-offset-2 ring-foreground scale-110'
+                      : 'hover:scale-105 opacity-60'
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+
+          {form.name && (
+            <div className="flex items-center gap-3 p-3 bg-muted/30 rounded-xl border border-border">
+              <div className={`w-10 h-10 rounded-xl ${form.color} flex items-center justify-center text-white font-bold text-sm shrink-0`}>
+                {preview}
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-foreground">{form.name}</p>
+                <p className="text-xs text-muted-foreground">{form.specialty || 'ความเชี่ยวชาญ'}</p>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <p className="text-sm text-destructive bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border">
+          <button
+            onClick={onClose}
+            className="text-sm text-muted-foreground hover:text-foreground px-4 py-2 rounded-lg hover:bg-muted transition-colors"
+          >
+            ยกเลิก
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!isValid || submitting}
+            className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-5 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          >
+            <Plus size={14} />
+            {submitting ? 'กำลังเพิ่ม...' : 'เพิ่มแพทย์'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 // ── Views ──────────────────────────────────────────────────────────────────
 
-function DashboardView({ bookings, loading, error, onAction, actionLoading, date, onDateChange }: {
+function DashboardView({ bookings, loading, error, onAction, actionLoading, date, onDateChange, onAddQueue, onRefresh }: {
   bookings: Booking[]
   loading: boolean
   error: Error | null
@@ -152,6 +530,8 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
   actionLoading: string | null
   date: string
   onDateChange: (d: string) => void
+  onAddQueue: () => void
+  onRefresh: () => void
 }) {
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<Status | 'all'>('all')
@@ -190,10 +570,16 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
             onChange={e => onDateChange(e.target.value)}
             className="text-sm bg-input-background border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring/30"
           />
-          <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <button
+            onClick={onRefresh}
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
             <RefreshCw size={14} />รีเฟรช
           </button>
-          <button className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors">
+          <button
+            onClick={onAddQueue}
+            className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors"
+          >
             <Plus size={14} />เพิ่มคิว
           </button>
         </div>
@@ -263,7 +649,7 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
         {loading && <p className="p-5 text-sm text-muted-foreground">กำลังโหลด...</p>}
         {error && <p className="p-5 text-sm text-destructive">ข้อผิดพลาด: {error.message}</p>}
 
-        {/* Mobile card list — shown below md breakpoint */}
+        {/* Mobile card list */}
         <div className="md:hidden divide-y divide-border">
           {!loading && filtered.length === 0 && (
             <p className="text-center py-12 text-muted-foreground text-sm">ไม่พบข้อมูลที่ค้นหา</p>
@@ -310,7 +696,7 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
           })}
         </div>
 
-        {/* Desktop table — hidden below md breakpoint */}
+        {/* Desktop table */}
         <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -495,9 +881,38 @@ function QuotaView({ date }: { date: string }) {
   )
 }
 
-function DoctorsView() {
-  const [shifts, setShifts] = useState<DoctorShift[]>(initialShifts)
+// ── Doctors View ───────────────────────────────────────────────────────────
+
+function DoctorsView({ clinicId }: { clinicId: string }) {
+  const [doctorList, setDoctorList] = useState<ApiDoctor[]>([])
+  const [shifts, setShifts] = useState<ShiftState[]>([])
+  const [loadingDoctors, setLoadingDoctors] = useState(true)
   const [selectedDoctor, setSelectedDoctor] = useState<string | null>(null)
+  const [showAddDoctor, setShowAddDoctor] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [savingShifts, setSavingShifts] = useState(false)
+  const [shiftsSaved, setShiftsSaved] = useState(false)
+  const [shiftError, setShiftError] = useState('')
+
+  const loadDoctors = useCallback(() => {
+    if (!clinicId) { setLoadingDoctors(false); return }
+    setLoadingDoctors(true)
+    fetchDoctors(clinicId)
+      .then(apiDoctors => {
+        setDoctorList(apiDoctors)
+        const localShifts: ShiftState[] = apiDoctors.flatMap(doc =>
+          DAYS.map((day, idx) => {
+            const s = doc.shifts.find(sh => sh.day_of_week === idx)
+            return { doctorId: doc.id, day, morning: s?.morning ?? false, afternoon: s?.afternoon ?? false }
+          })
+        )
+        setShifts(localShifts)
+      })
+      .catch(console.error)
+      .finally(() => setLoadingDoctors(false))
+  }, [clinicId])
+
+  useEffect(() => { loadDoctors() }, [loadDoctors])
 
   const getShift = (doctorId: string, day: string) =>
     shifts.find(s => s.doctorId === doctorId && s.day === day)
@@ -506,120 +921,230 @@ function DoctorsView() {
     setShifts(prev =>
       prev.map(s => s.doctorId === doctorId && s.day === day ? { ...s, [period]: !s[period] } : s)
     )
+    setShiftsSaved(false)
   }
 
-  const filteredDoctors = selectedDoctor ? doctors.filter(d => d.id === selectedDoctor) : doctors
+  const handleSaveShifts = async () => {
+    setSavingShifts(true)
+    setShiftError('')
+    try {
+      for (const doc of doctorList) {
+        const apiShifts = DAYS.map((day, idx) => {
+          const s = shifts.find(sh => sh.doctorId === doc.id && sh.day === day)
+          return { day_of_week: idx, morning: s?.morning ?? false, afternoon: s?.afternoon ?? false }
+        })
+        await updateDoctorShifts(doc.id, apiShifts)
+      }
+      setShiftsSaved(true)
+      setTimeout(() => setShiftsSaved(false), 2500)
+    } catch (e) {
+      setShiftError((e as Error).message)
+    } finally {
+      setSavingShifts(false)
+    }
+  }
+
+  const handleDeleteDoctor = async (doctorId: string) => {
+    try {
+      await apiDeleteDoctor(doctorId)
+      setDoctorList(prev => prev.filter(d => d.id !== doctorId))
+      setShifts(prev => prev.filter(s => s.doctorId !== doctorId))
+      if (selectedDoctor === doctorId) setSelectedDoctor(null)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setConfirmDelete(null)
+    }
+  }
+
+  const handleDoctorCreated = (newDoc: ApiDoctor) => {
+    setDoctorList(prev => [...prev, newDoc])
+    setShifts(prev => [
+      ...prev,
+      ...DAYS.map(day => ({ doctorId: newDoc.id, day, morning: false, afternoon: false })),
+    ])
+    setShowAddDoctor(false)
+  }
+
+  const filteredDoctors = selectedDoctor ? doctorList.filter(d => d.id === selectedDoctor) : doctorList
 
   return (
     <div className="flex flex-col gap-6">
+      {showAddDoctor && (
+        <AddDoctorModal
+          clinicId={clinicId}
+          onClose={() => setShowAddDoctor(false)}
+          onCreated={handleDoctorCreated}
+        />
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>ตารางงานแพทย์</h1>
           <p className="text-sm text-muted-foreground mt-0.5">จัดการตารางกะและวันทำงานของแพทย์รายสัปดาห์</p>
         </div>
-        <button className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors">
+        <button
+          onClick={() => setShowAddDoctor(true)}
+          className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors"
+        >
           <Plus size={14} />เพิ่มแพทย์
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {doctors.map(doc => {
-          const workDays = DAYS.filter(d => { const s = getShift(doc.id, d); return s && (s.morning || s.afternoon) }).length
-          return (
-            <button
-              key={doc.id}
-              onClick={() => setSelectedDoctor(selectedDoctor === doc.id ? null : doc.id)}
-              className={`bg-card border rounded-xl p-4 text-left transition-all hover:shadow-sm ${selectedDoctor === doc.id ? 'border-primary ring-2 ring-primary/20' : 'border-border'}`}
-            >
-              <div className="flex items-center gap-3 mb-3">
-                <div className={`w-10 h-10 rounded-xl ${doc.color} flex items-center justify-center text-white font-bold text-sm`}>{doc.initials}</div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-foreground truncate leading-tight">{doc.name}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{doc.specialty}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1">
-                {DAY_SHORT.map((d, i) => {
-                  const s = getShift(doc.id, DAYS[i])
-                  const active = s && (s.morning || s.afternoon)
-                  const both = s && s.morning && s.afternoon
-                  return (
-                    <div key={d} className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold transition-colors ${
-                      both ? `${doc.color} text-white` : active ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'
-                    }`}>
-                      {d}
-                    </div>
-                  )
-                })}
-              </div>
-              <p className="text-xs text-muted-foreground mt-2">{workDays} วัน/สัปดาห์</p>
-            </button>
-          )
-        })}
-      </div>
-
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h2 className="font-semibold text-foreground text-sm">
-            {selectedDoctor ? `ตารางงาน — ${doctors.find(d => d.id === selectedDoctor)?.name}` : 'ตารางงานทั้งหมด (รายสัปดาห์)'}
-          </h2>
-          {selectedDoctor && (
-            <button onClick={() => setSelectedDoctor(null)} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
-              <X size={12} />ดูทั้งหมด
-            </button>
-          )}
+      {loadingDoctors ? (
+        <p className="text-sm text-muted-foreground py-8 text-center">กำลังโหลดข้อมูลแพทย์...</p>
+      ) : doctorList.length === 0 ? (
+        <div className="bg-card border border-dashed border-border rounded-xl p-12 text-center">
+          <Stethoscope size={32} className="mx-auto text-muted-foreground/40 mb-3" />
+          <p className="text-sm text-muted-foreground">ยังไม่มีข้อมูลแพทย์ กดปุ่ม "เพิ่มแพทย์" เพื่อเริ่มต้น</p>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-muted/40 border-b border-border">
-                <th className="text-left px-5 py-3 text-xs font-semibold text-muted-foreground w-52">แพทย์</th>
-                {DAYS.map(day => (
-                  <th key={day} className="text-center px-2 py-3 text-xs font-semibold text-muted-foreground min-w-24">{day}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredDoctors.map(doc => (
-                <tr key={doc.id} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
-                  <td className="px-5 py-4">
-                    <div className="flex items-center gap-2.5">
-                      <div className={`w-7 h-7 rounded-lg ${doc.color} flex items-center justify-center text-white font-bold text-xs shrink-0`}>{doc.initials}</div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold text-foreground truncate">{doc.name}</p>
-                        <p className="text-[10px] text-muted-foreground">{doc.specialty}</p>
-                      </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {doctorList.map(doc => {
+              const workDays = DAYS.filter(d => { const s = getShift(doc.id, d); return s && (s.morning || s.afternoon) }).length
+              return (
+                <button
+                  key={doc.id}
+                  onClick={() => setSelectedDoctor(selectedDoctor === doc.id ? null : doc.id)}
+                  className={`bg-card border rounded-xl p-4 text-left transition-all hover:shadow-sm ${selectedDoctor === doc.id ? 'border-primary ring-2 ring-primary/20' : 'border-border'}`}
+                >
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className={`w-10 h-10 rounded-xl ${doc.color} flex items-center justify-center text-white font-bold text-sm`}>
+                      {doc.initials || doc.name.substring(0, 2)}
                     </div>
-                  </td>
-                  {DAYS.map(day => {
-                    const s = getShift(doc.id, day)
-                    return (
-                      <td key={day} className="px-2 py-4 text-center">
-                        <div className="flex flex-col items-center gap-1">
-                          {(['morning', 'afternoon'] as const).map(period => (
-                            <button
-                              key={period}
-                              onClick={() => toggleShift(doc.id, day, period)}
-                              className={`w-10 h-7 rounded text-[10px] font-medium transition-colors ${
-                                s?.[period] ? `${doc.color} text-white` : 'bg-muted text-muted-foreground hover:bg-muted-foreground/20'
-                              }`}
-                            >
-                              {period === 'morning' ? 'เช้า' : 'บ่าย'}
-                            </button>
-                          ))}
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-foreground truncate leading-tight">{doc.name}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{doc.specialty}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {DAY_SHORT.map((d, i) => {
+                      const s = getShift(doc.id, DAYS[i])
+                      const active = s && (s.morning || s.afternoon)
+                      const both = s && s.morning && s.afternoon
+                      return (
+                        <div key={d} className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold transition-colors ${
+                          both ? `${doc.color} text-white` : active ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'
+                        }`}>
+                          {d}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">{workDays} วัน/สัปดาห์</p>
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="bg-card border border-border rounded-xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-wrap gap-3">
+              <h2 className="font-semibold text-foreground text-sm">
+                {selectedDoctor
+                  ? `ตารางงาน — ${doctorList.find(d => d.id === selectedDoctor)?.name}`
+                  : 'ตารางงานทั้งหมด (รายสัปดาห์)'}
+              </h2>
+              <div className="flex items-center gap-2">
+                {selectedDoctor && (
+                  <button onClick={() => setSelectedDoctor(null)} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
+                    <X size={12} />ดูทั้งหมด
+                  </button>
+                )}
+                <button
+                  onClick={handleSaveShifts}
+                  disabled={savingShifts}
+                  className="flex items-center gap-1.5 text-sm bg-primary text-primary-foreground font-medium px-3 py-1.5 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                >
+                  <Save size={13} />
+                  {savingShifts ? 'กำลังบันทึก...' : shiftsSaved ? 'บันทึกแล้ว ✓' : 'บันทึกตาราง'}
+                </button>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-muted/40 border-b border-border">
+                    <th className="text-left px-5 py-3 text-xs font-semibold text-muted-foreground w-52">แพทย์</th>
+                    {DAYS.map(day => (
+                      <th key={day} className="text-center px-2 py-3 text-xs font-semibold text-muted-foreground min-w-24">{day}</th>
+                    ))}
+                    <th className="px-3 py-3 text-xs font-semibold text-muted-foreground text-center w-16">ลบ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredDoctors.map(doc => (
+                    <tr key={doc.id} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className={`w-7 h-7 rounded-lg ${doc.color} flex items-center justify-center text-white font-bold text-xs shrink-0`}>
+                            {doc.initials || doc.name.substring(0, 2)}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-foreground truncate">{doc.name}</p>
+                            <p className="text-[10px] text-muted-foreground">{doc.specialty}</p>
+                          </div>
                         </div>
                       </td>
-                    )
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="px-5 py-3 border-t border-border bg-muted/20 flex items-center gap-4 flex-wrap">
-          <p className="ml-auto text-xs text-muted-foreground">คลิกที่ช่องเช้า/บ่ายเพื่อแก้ไขตาราง</p>
-        </div>
-      </div>
+                      {DAYS.map(day => {
+                        const s = getShift(doc.id, day)
+                        return (
+                          <td key={day} className="px-2 py-4 text-center">
+                            <div className="flex flex-col items-center gap-1">
+                              {(['morning', 'afternoon'] as const).map(period => (
+                                <button
+                                  key={period}
+                                  onClick={() => toggleShift(doc.id, day, period)}
+                                  className={`w-10 h-7 rounded text-[10px] font-medium transition-colors ${
+                                    s?.[period]
+                                      ? `${doc.color} text-white`
+                                      : 'bg-muted text-muted-foreground hover:bg-muted-foreground/20'
+                                  }`}
+                                >
+                                  {period === 'morning' ? 'เช้า' : 'บ่าย'}
+                                </button>
+                              ))}
+                            </div>
+                          </td>
+                        )
+                      })}
+                      <td className="px-3 py-4 text-center">
+                        {confirmDelete === doc.id ? (
+                          <div className="flex flex-col items-center gap-1">
+                            <button
+                              onClick={() => handleDeleteDoctor(doc.id)}
+                              className="text-[10px] font-medium text-white bg-rose-600 px-2 py-1 rounded hover:bg-rose-700 transition-colors"
+                            >
+                              ยืนยัน
+                            </button>
+                            <button
+                              onClick={() => setConfirmDelete(null)}
+                              className="text-[10px] text-muted-foreground hover:text-foreground"
+                            >
+                              ยกเลิก
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmDelete(doc.id)}
+                            className="p-1.5 text-muted-foreground hover:text-destructive transition-colors rounded"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="px-5 py-3 border-t border-border bg-muted/20 flex items-center gap-4 flex-wrap">
+              {shiftError && <p className="text-xs text-destructive">{shiftError}</p>}
+              <p className="ml-auto text-xs text-muted-foreground">คลิกที่ช่องเช้า/บ่ายเพื่อแก้ไข แล้วกด "บันทึกตาราง"</p>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -824,10 +1349,11 @@ export default function DashboardPage() {
   const [activeNav, setActiveNav] = useState<NavItem>('dashboard')
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [showAddQueue, setShowAddQueue] = useState(false)
 
   const constraints = useMemo(() => ({ date, clinicId: CLINIC_ID }), [date])
 
-  const { data: bookings, loading: bLoading, error } = useFirestoreCollection<Booking>(
+  const { data: bookings, loading: bLoading, error, refetch } = useFirestoreCollection<Booking>(
     'bookings',
     constraints,
   )
@@ -859,6 +1385,16 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-background flex" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+      {/* Add Queue Modal */}
+      {showAddQueue && (
+        <AddQueueModal
+          date={date}
+          clinicId={CLINIC_ID}
+          onClose={() => setShowAddQueue(false)}
+          onCreated={() => { setShowAddQueue(false); refetch() }}
+        />
+      )}
+
       {/* Sidebar */}
       <aside className="w-56 bg-card border-r border-border flex flex-col shrink-0 h-screen sticky top-0">
         <div className="p-5 border-b border-border">
@@ -958,9 +1494,11 @@ export default function DashboardPage() {
               actionLoading={actionLoading}
               date={date}
               onDateChange={setDate}
+              onAddQueue={() => setShowAddQueue(true)}
+              onRefresh={refetch}
             />
           )}
-          {activeNav === 'doctors' && <DoctorsView />}
+          {activeNav === 'doctors' && <DoctorsView clinicId={CLINIC_ID} />}
           {activeNav === 'quota' && <QuotaView date={date} />}
           {activeNav === 'patients' && <PatientsView bookings={bookings} />}
           {activeNav === 'settings' && <SettingsView />}

@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../lib/api'
 
 interface UseCollectionResult<T> {
   data: T[]
   loading: boolean
   error: Error | null
+  refetch: () => void
 }
 
 /**
@@ -19,6 +20,7 @@ export function useFirestoreCollection<T extends { id: string }>(
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
   const cancelledRef = useRef(false)
+  const [tick, setTick] = useState(0)
 
   const date = constraints.date ?? new Date().toISOString().split('T')[0]
   const clinicId = constraints.clinicId ?? ''
@@ -49,7 +51,9 @@ export function useFirestoreCollection<T extends { id: string }>(
       cancelledRef.current = true
       clearInterval(interval)
     }
-  }, [date, clinicId])
+  }, [date, clinicId, tick])
 
-  return { data, loading, error }
+  const refetch = useCallback(() => setTick(t => t + 1), [])
+
+  return { data, loading, error, refetch }
 }

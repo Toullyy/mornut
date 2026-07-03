@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.routers import admin, booking, clinics, internal, quota, slip, webhook
+from app.routers import admin, booking, clinics, doctors, internal, quota, slip, webhook
 
 app = FastAPI(title="MorNut API", version="1.0.0")
 
@@ -22,6 +22,7 @@ app.include_router(booking.router, prefix="/bookings", tags=["bookings"])
 app.include_router(slip.router, prefix="/slips", tags=["slips"])
 app.include_router(quota.router, prefix="/quotas", tags=["quotas"])
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
+app.include_router(doctors.router, prefix="/doctors", tags=["doctors"])
 app.include_router(internal.router, prefix="/internal", tags=["internal"])
 
 

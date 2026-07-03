@@ -50,6 +50,7 @@ def create_booking(
     time_slot: str,
     coverage: str,
     doc: dict,
+    initial_status: str = "pending_slip",
 ) -> str:
     """Insert a booking inside a transaction with slot+quota guard.
 
@@ -302,3 +303,137 @@ def get_patient_bookings(patient_line_id: str) -> list[dict]:
                 (patient_line_id,),
             )
             return [_row_to_booking(dict(r)) for r in cur.fetchall()]
+
+
+# ── Doctors ───────────────────────────────────────────────────────────────────
+
+def get_doctors(clinic_id: str) -> list[dict]:
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "SELECT id::text, clinic_id, name, specialty, color, initials "
+                "FROM doctors WHERE clinic_id = %s ORDER BY created_at",
+                (clinic_id,),
+            )
+            doctors = [dict(r) for r in cur.fetchall()]
+            if doctors:
+                ids = tuple(d["id"] for d in doctors)
+                placeholders = ",".join(["%s"] * len(ids))
+                cur.execute(
+                    f"SELECT doctor_id::text, day_of_week, morning, afternoon "
+                    f"FROM doctor_shifts WHERE doctor_id::text IN ({placeholders})",
+                    ids,
+                )
+                shifts_map: dict[str, list[dict]] = {}
+                for s in cur.fetchall():
+                    did = s["doctor_id"]
+                    shifts_map.setdefault(did, []).append({
+                        "day_of_week": s["day_of_week"],
+                        "morning": s["morning"],
+                        "afternoon": s["afternoon"],
+                    })
+                for d in doctors:
+                    d["shifts"] = shifts_map.get(d["id"], [])
+    return doctors
+
+
+def create_doctor(clinic_id: str, name: str, specialty: str, color: str, initials: str) -> str:
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "INSERT INTO doctors (clinic_id, name, specialty, color, initials) "
+                "VALUES (%s, %s, %s, %s, %s) RETURNING id::text",
+                (clinic_id, name, specialty, color, initials),
+            )
+            row = cur.fetchone()
+    return row["id"]
+
+
+def update_doctor(doctor_id: str, data: dict) -> None:
+    allowed = {"name", "specialty", "color", "initials"}
+    fields = {k: v for k, v in data.items() if k in allowed}
+    if not fields:
+        return
+    set_clause = ", ".join(f"{k} = %s" for k in fields)
+    values = list(fields.values()) + [doctor_id]
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                f"UPDATE doctors SET {set_clause} WHERE id::text = %s",
+                values,
+            )
+
+
+def delete_doctor(doctor_id: str) -> None:
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute("DELETE FROM doctors WHERE id::text = %s", (doctor_id,))
+
+
+def upsert_doctor_shifts(doctor_id: str, shifts: list[dict]) -> None:
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "DELETE FROM doctor_shifts WHERE doctor_id::text = %s", (doctor_id,)
+            )
+            for s in shifts:
+                cur.execute(
+                    "INSERT INTO doctor_shifts (doctor_id, day_of_week, morning, afternoon) "
+                    "VALUES (%s::uuid, %s, %s, %s)",
+                    (doctor_id, s["day_of_week"], s["morning"], s["afternoon"]),
+                )
+
+
+# ── Admin walk-in booking ─────────────────────────────────────────────────────
+
+def create_admin_booking(
+    clinic_id: str,
+    date: str,
+    time_slot: str,
+    coverage: str,
+    doc: dict,
+) -> str:
+    """Insert a walk-in booking created by admin. Sets status=confirmed directly."""
+    booking_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "SELECT capacity, reserved FROM slots "
+                "WHERE clinic_id = %s AND date = %s AND time = %s FOR UPDATE",
+                (clinic_id, date, time_slot),
+            )
+            slot = cur.fetchone()
+            if slot is None:
+                raise ValueError(f"ไม่มีช่องเวลา {time_slot}")
+            if slot["reserved"] >= slot["capacity"]:
+                raise ValueError(f"เวลา {time_slot} เต็มแล้ว")
+
+            cur.execute(
+                """
+                INSERT INTO bookings (
+                    id, clinic_id, patient_line_id, patient_name, phone,
+                    service_id, service_name, deposit_amount,
+                    date, time, coverage, status, created_at, updated_at
+                ) VALUES (
+                    %s, %s, 'walk-in', %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s, 'confirmed', %s, %s
+                )
+                """,
+                (
+                    booking_id, doc["clinicId"],
+                    doc["patientName"], doc["phone"],
+                    doc["serviceId"], doc["serviceName"], doc["depositAmount"],
+                    doc["date"], doc["time"], doc["coverage"],
+                    now, now,
+                ),
+            )
+            cur.execute(
+                "UPDATE slots SET reserved = reserved + 1 "
+                "WHERE clinic_id = %s AND date = %s AND time = %s",
+                (clinic_id, date, time_slot),
+            )
+
+    return booking_id

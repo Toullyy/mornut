@@ -69,3 +69,41 @@ async def update_booking_status(
         await asyncio.to_thread(repo.cancel_booking, booking_id)
     else:
         await asyncio.to_thread(repo.update_booking, booking_id, {"status": "done"})
+
+
+class AdminBookingCreate(BaseModel):
+    patient_name: str
+    phone: str
+    service_id: str
+    service_name: str
+    date: str
+    time: str
+    coverage: Literal["cash", "sso", "universal"]
+    deposit_amount: float = 0.0
+    clinic_id: str = ""
+
+
+@router.post("/bookings", status_code=201)
+async def create_booking_admin(
+    body: AdminBookingCreate,
+    _admin: AdminUser = None,
+) -> dict:
+    cid = body.clinic_id or settings.clinic_id
+    doc = {
+        "clinicId": cid,
+        "patientName": body.patient_name,
+        "phone": body.phone,
+        "serviceId": body.service_id,
+        "serviceName": body.service_name,
+        "depositAmount": body.deposit_amount,
+        "date": body.date,
+        "time": body.time,
+        "coverage": body.coverage,
+    }
+    try:
+        booking_id = await asyncio.to_thread(
+            repo.create_admin_booking, cid, body.date, body.time, body.coverage, doc
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"id": booking_id}
