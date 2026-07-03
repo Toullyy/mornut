@@ -7,7 +7,9 @@ export interface AuthUser {
 
 function decodeToken(token: string): AuthUser | null {
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]))
+    // JWT uses base64url — replace url-safe chars before decoding
+    const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    const payload = JSON.parse(atob(b64))
     if (!payload.sub) return null
     return { email: payload.sub as string }
   } catch {

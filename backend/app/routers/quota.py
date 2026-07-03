@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 from app.core.security import get_admin_user
 from app.models.clinic import QuotaOut, QuotaSetRequest
 from app.services import clinic_service
-from app.services import firestore as repo
+from app.services import database as repo
 
 router = APIRouter()
 
