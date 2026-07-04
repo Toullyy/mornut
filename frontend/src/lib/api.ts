@@ -23,6 +23,12 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
       ...(init.headers ?? {}),
     },
   })
+  if (res.status === 401 && token) {
+    // Authenticated request got 401 — session expired, force re-login
+    clearToken()
+    window.location.reload()
+    throw new Error('Session expired')
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error((body as { detail?: string }).detail ?? `HTTP ${res.status}`)

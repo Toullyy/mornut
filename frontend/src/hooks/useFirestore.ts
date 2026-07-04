@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { apiFetch } from '../lib/api'
+import { apiFetch, getToken } from '../lib/api'
 
 interface UseCollectionResult<T> {
   data: T[]
@@ -29,6 +29,10 @@ export function useFirestoreCollection<T extends { id: string }>(
     cancelledRef.current = false
 
     async function fetchData() {
+      if (!getToken()) {
+        setLoading(false)
+        return
+      }
       try {
         const qs = clinicId ? `date=${date}&clinic_id=${clinicId}` : `date=${date}`
         const items = await apiFetch<T[]>(`/admin/bookings?${qs}`)

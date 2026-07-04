@@ -1,10 +1,26 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.routers import admin, booking, clinics, doctors, internal, quota, slip, webhook
 
-app = FastAPI(title="MorNut API", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if settings.debug_mode:
+        try:
+            from app.services.dev_seed import reseed_today
+            result = await asyncio.to_thread(reseed_today)
+            print(f"[DEV] Auto-seeded: {result}")
+        except Exception as e:
+            print(f"[DEV] Auto-seed failed (non-fatal): {e}")
+    yield
+
+
+app = FastAPI(title="MorNut API", version="1.0.0", lifespan=lifespan)
 
 _origins = [o.strip() for o in settings.allowed_origins.split(",") if o.strip()]
 

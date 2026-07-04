@@ -10,6 +10,7 @@ from app.core.security import (
     get_admin_user,
     verify_password,
 )
+from app.core.db import cursor, get_conn  # used by debug/db endpoint
 from app.models.booking import BookingOut
 from app.services import database as repo
 from app.services.booking_service import _to_out
@@ -88,7 +89,7 @@ async def connect_line_oa_endpoint(body: LineOAConnect) -> dict:
     try:
         bot_info = await connect_line_oa(body.channel_secret, body.channel_access_token)
     except ValueError as e:
-        raise HTTPException(status_code=401, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"LINE API error: {e}")
 
@@ -121,6 +122,47 @@ async def dev_connect(body: LineOAConnect) -> dict:
             "markAsReadMode": "auto",
         },
     }
+
+
+@router.post("/debug/reseed-today")
+async def reseed_today_endpoint() -> dict:
+    """DEBUG_MODE only — full reseed anchored to today. Same logic as auto-startup seed."""
+    if not settings.debug_mode:
+        raise HTTPException(status_code=403, detail="Only available in debug mode")
+    from app.services.dev_seed import reseed_today
+    return await asyncio.to_thread(reseed_today)
+
+
+@router.get("/debug/db")
+async def debug_db() -> dict:
+    """DEBUG_MODE only — shows raw DB counts and booking dates to diagnose empty results."""
+    if not settings.debug_mode:
+        raise HTTPException(status_code=403, detail="Only available in debug mode")
+
+    def _query():
+        with get_conn() as conn:
+            with cursor(conn) as cur:
+                counts = {}
+                for table in ("services", "doctors", "slots", "quotas", "bookings"):
+                    cur.execute(f"SELECT COUNT(*) AS n FROM {table}")
+                    counts[table] = cur.fetchone()["n"]
+
+                cur.execute(
+                    "SELECT clinic_id, date::text, COUNT(*) AS n "
+                    "FROM bookings GROUP BY clinic_id, date ORDER BY date"
+                )
+                by_date = [dict(r) for r in cur.fetchall()]
+
+                cur.execute(
+                    "SELECT id::text, clinic_id, patient_name, date::text, time::text, status "
+                    "FROM bookings ORDER BY date, time LIMIT 20"
+                )
+                sample = [dict(r) for r in cur.fetchall()]
+
+        return {"counts": counts, "bookings_by_date": by_date, "sample": sample}
+
+    result = await asyncio.to_thread(_query)
+    return result
 
 
 class AdminBookingCreate(BaseModel):

@@ -11,6 +11,8 @@ function decodeToken(token: string): AuthUser | null {
     const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
     const payload = JSON.parse(atob(b64))
     if (!payload.sub) return null
+    // Reject already-expired tokens so we don't reach the API just to get 401
+    if (payload.exp && Date.now() / 1000 > payload.exp) return null
     return { email: payload.sub as string }
   } catch {
     return null

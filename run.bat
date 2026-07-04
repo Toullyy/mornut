@@ -25,9 +25,39 @@ if errorlevel 1 (
     echo  [ERROR] Node.js not found. Install Node.js 20+ and try again.
     pause & exit /b 1
 )
+where docker >nul 2>&1
+if errorlevel 1 (
+    echo  [ERROR] Docker not found. Install Docker Desktop and try again.
+    pause & exit /b 1
+)
 
-:: --- Step 1: Python virtual environment -------------------------------------
-echo  [1/4] Checking Python virtual environment...
+:: --- Step 1: Database (Docker) -----------------------------------------------
+echo  [1/5] Starting database (Docker)...
+docker compose -f "%ROOT%\docker-compose.yml" up -d
+if errorlevel 1 (
+    echo  [ERROR] Failed to start Docker database.
+    echo         Make sure Docker Desktop is running.
+    pause & exit /b 1
+)
+
+:: Wait for PostgreSQL to be ready (retry up to 15 times, 2 sec apart)
+echo        Waiting for PostgreSQL to be ready...
+set /a RETRIES=0
+:waitloop
+set /a RETRIES+=1
+if %RETRIES% gtr 15 (
+    echo  [ERROR] Database did not become ready in time.
+    pause & exit /b 1
+)
+docker exec mornut_db pg_isready -U mornut >nul 2>&1
+if errorlevel 1 (
+    ping 127.0.0.1 -n 3 >nul 2>&1
+    goto waitloop
+)
+echo        Database is ready.
+
+:: --- Step 2: Python virtual environment -------------------------------------
+echo  [2/5] Checking Python virtual environment...
 if not exist "%BACKEND%\.venv\Scripts\activate.bat" (
     echo        Creating .venv (first-time only^)...
     python -m venv "%BACKEND%\.venv"
@@ -37,8 +67,8 @@ if not exist "%BACKEND%\.venv\Scripts\activate.bat" (
     )
 )
 
-:: --- Step 2: Backend packages -----------------------------------------------
-echo  [2/4] Installing / verifying backend packages...
+:: --- Step 3: Backend packages -----------------------------------------------
+echo  [3/5] Installing / verifying backend packages...
 "%BACKEND%\.venv\Scripts\pip" install -r "%BACKEND%\requirements.txt" -q
 if errorlevel 1 (
     echo  [ERROR] pip install failed.
@@ -48,14 +78,13 @@ if errorlevel 1 (
 if not exist "%BACKEND%\.env" (
     echo.
     echo  [!] backend\.env not found.
-    echo      Copying .env.example to .env
-    echo      Edit backend\.env and fill in your real credentials.
+    echo      Copying .env.example to .env — edit it before proceeding.
     echo.
     copy "%BACKEND%\.env.example" "%BACKEND%\.env" >nul
 )
 
-:: --- Step 3: Frontend packages ----------------------------------------------
-echo  [3/4] Checking frontend packages...
+:: --- Step 4: Frontend packages ----------------------------------------------
+echo  [4/5] Checking frontend packages...
 if not exist "%FRONTEND%\node_modules" (
     echo        Running npm install (first-time only^)...
     pushd "%FRONTEND%"
@@ -71,17 +100,17 @@ if not exist "%FRONTEND%\.env.local" (
     echo.
     echo  [!] frontend\.env.local not found.
     echo      Copying .env.example to .env.local
-    echo      Edit frontend\.env.local and fill in your real credentials.
     echo.
     copy "%FRONTEND%\.env.example" "%FRONTEND%\.env.local" >nul
 )
 
-:: --- Step 4: Launch ---------------------------------------------------------
-echo  [4/4] Launching servers...
+:: --- Step 5: Launch ----------------------------------------------------------
+echo  [5/5] Launching servers...
 echo.
-echo    Backend  API  --  http://localhost:8080
-echo    API Docs      --  http://localhost:8080/docs
-echo    Frontend      --  http://localhost:5173
+echo    Database     --  localhost:5433
+echo    Backend  API --  http://localhost:8080
+echo    API Docs     --  http://localhost:8080/docs
+echo    Frontend     --  http://localhost:5173
 echo.
 
 start "MorNut - Backend :8080"  /d "%BACKEND%"  cmd /k ".venv\Scripts\activate && uvicorn app.main:app --reload --port 8080"
@@ -90,5 +119,6 @@ start "MorNut - Frontend :5173" /d "%FRONTEND%" cmd /k "npm run dev"
 
 echo  Both servers are starting in separate windows.
 echo  Close each window (or press Ctrl+C inside it) to stop.
+echo  To stop the database: docker compose -f "%ROOT%\docker-compose.yml" down
 echo.
 endlocal

@@ -27,6 +27,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
+import { apiFetch } from '../lib/api'
 import { useFirestoreCollection } from '../hooks/useFirestore'
 import AdminLogin from './AdminLogin'
 import {
@@ -780,20 +781,17 @@ function QuotaView({ date }: { date: string }) {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
 
-  const BASE = import.meta.env.VITE_API_BASE_URL || '/api'
-
   const loadQuota = async () => {
     if (!CLINIC_ID) return
     try {
-      const res = await fetch(`${BASE}/quotas/${CLINIC_ID}/${date}`)
-      if (res.ok) {
-        const data = await res.json()
-        setQuotaValues({
-          cash: data.cash?.limit ?? 10,
-          sso: data.sso?.limit ?? 8,
-          universal: data.universal?.limit ?? 12,
-        })
-      }
+      const data = await apiFetch<{ cash?: { limit: number }; sso?: { limit: number }; universal?: { limit: number } }>(
+        `/quotas/${CLINIC_ID}/${date}`,
+      )
+      setQuotaValues({
+        cash: data.cash?.limit ?? 10,
+        sso: data.sso?.limit ?? 8,
+        universal: data.universal?.limit ?? 12,
+      })
     } catch { /* keep defaults */ }
   }
 
@@ -1359,7 +1357,7 @@ export default function DashboardPage() {
   )
 
   if (authLoading) return <FullPage>กำลังโหลด...</FullPage>
-  if (!user) return <AdminLogin onLogin={onLogin} />
+  if (!user) return <AdminLogin onLogin={(u) => { onLogin(u); refetch() }} />
 
   async function handleAction(bookingId: string, action: 'done' | 'cancelled') {
     setActionLoading(bookingId + action)
