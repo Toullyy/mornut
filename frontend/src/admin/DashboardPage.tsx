@@ -73,14 +73,24 @@ const CLINIC_ID =
 
 // All color strings here so Tailwind's content scanner includes them in the bundle
 const DOCTOR_COLORS = [
-  'bg-sky-500',
-  'bg-violet-500',
-  'bg-amber-500',
+  'bg-red-500',
   'bg-rose-500',
-  'bg-emerald-500',
+  'bg-pink-500',
+  'bg-fuchsia-500',
+  'bg-purple-500',
+  'bg-violet-500',
   'bg-indigo-500',
+  'bg-blue-500',
+  'bg-sky-500',
+  'bg-cyan-500',
   'bg-teal-500',
+  'bg-emerald-500',
+  'bg-green-500',
+  'bg-lime-500',
+  'bg-yellow-500',
+  'bg-amber-500',
   'bg-orange-500',
+  'bg-slate-500',
 ]
 
 const DAYS = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์']
@@ -175,7 +185,8 @@ function AddQueueModal({
   onCreated: () => void
 }) {
   const [form, setForm] = useState({
-    patient_name: '',
+    first_name: '',
+    last_name: '',
     phone: '',
     date: initialDate,
     time: '',
@@ -215,8 +226,8 @@ function AddQueueModal({
   }, [form.service_id, services])
 
   const isValid =
-    form.patient_name.trim().length > 0 &&
-    form.phone.trim().length >= 9 &&
+    form.first_name.trim().length > 0 &&
+    form.phone.trim().length === 10 &&
     form.date.length > 0 &&
     form.time.length > 0 &&
     form.service_id.length > 0
@@ -226,8 +237,9 @@ function AddQueueModal({
     setSubmitting(true)
     setError('')
     try {
+      const fullName = `${form.first_name.trim()} ${form.last_name.trim()}`.trim()
       await createAdminBooking({
-        patient_name: form.patient_name.trim(),
+        patient_name: fullName,
         phone: form.phone.trim(),
         service_id: form.service_id,
         service_name: form.service_name,
@@ -259,25 +271,40 @@ function AddQueueModal({
         <div className="px-6 py-5 flex flex-col gap-4 overflow-y-auto">
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-muted-foreground">ชื่อ-นามสกุล <span className="text-destructive">*</span></label>
+              <label className="text-xs font-medium text-muted-foreground">ชื่อ <span className="text-destructive">*</span></label>
               <input
                 type="text"
-                placeholder="ชื่อผู้ป่วย"
-                value={form.patient_name}
-                onChange={e => setForm(f => ({ ...f, patient_name: e.target.value }))}
+                placeholder="ชื่อ"
+                value={form.first_name}
+                onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))}
                 className={field}
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-muted-foreground">เบอร์โทร <span className="text-destructive">*</span></label>
+              <label className="text-xs font-medium text-muted-foreground">นามสกุล</label>
               <input
-                type="tel"
-                placeholder="08x-xxx-xxxx"
-                value={form.phone}
-                onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-                className={`${field} font-mono`}
+                type="text"
+                placeholder="นามสกุล"
+                value={form.last_name}
+                onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))}
+                className={field}
               />
             </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-muted-foreground">เบอร์โทร <span className="text-destructive">*</span></label>
+            <input
+              type="tel"
+              placeholder="0812345678"
+              value={form.phone}
+              maxLength={10}
+              onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
+              className={`${field} font-mono tracking-widest`}
+            />
+            {form.phone.length > 0 && form.phone.length < 10 && (
+              <p className="text-[11px] text-muted-foreground">{form.phone.length}/10 หลัก</p>
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">
