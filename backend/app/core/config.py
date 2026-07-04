@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     # Internal: Cloud Scheduler uses this to authenticate POST /internal/remind
     scheduler_secret: str = ""
 
+    # Set to true in local dev to enable /admin/line-oa/dev-connect bypass
+    debug_mode: bool = False
+
     # CORS: comma-separated list of allowed origins for production
     # e.g. ALLOWED_ORIGINS=https://app.example.com,https://www.example.com
     allowed_origins: str = "http://localhost:5173,http://localhost:3000"

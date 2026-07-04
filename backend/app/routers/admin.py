@@ -13,6 +13,7 @@ from app.core.security import (
 from app.models.booking import BookingOut
 from app.services import database as repo
 from app.services.booking_service import _to_out
+from app.services.line import connect_line_oa
 
 router = APIRouter()
 
@@ -69,6 +70,57 @@ async def update_booking_status(
         await asyncio.to_thread(repo.cancel_booking, booking_id)
     else:
         await asyncio.to_thread(repo.update_booking, booking_id, {"status": "done"})
+
+
+# ── LINE OA ───────────────────────────────────────────────────────────────────
+
+class LineOAConnect(BaseModel):
+    channel_secret: str
+    channel_access_token: str
+
+
+@router.post("/line-oa/connect")
+async def connect_line_oa_endpoint(body: LineOAConnect) -> dict:
+    """
+    Authenticate using LINE OA credentials — no login page needed.
+    Valid secret + token → returns a JWT for all other admin endpoints.
+    """
+    try:
+        bot_info = await connect_line_oa(body.channel_secret, body.channel_access_token)
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"LINE API error: {e}")
+
+    token = create_access_token(bot_info["userId"])
+    return {
+        "connected": True,
+        "access_token": token,
+        "token_type": "bearer",
+        "bot": bot_info,
+    }
+
+
+@router.post("/line-oa/dev-connect")
+async def dev_connect(body: LineOAConnect) -> dict:
+    """Local dev bypass — skips LINE API call and returns a JWT immediately.
+    Only works when DEBUG_MODE=true. Returns 403 in production."""
+    if not settings.debug_mode:
+        raise HTTPException(status_code=403, detail="Only available in debug mode")
+
+    token = create_access_token("dev-admin")
+    return {
+        "connected": True,
+        "access_token": token,
+        "token_type": "bearer",
+        "bot": {
+            "userId": "dev-admin",
+            "displayName": "Dev Admin",
+            "pictureUrl": "",
+            "chatMode": "chat",
+            "markAsReadMode": "auto",
+        },
+    }
 
 
 class AdminBookingCreate(BaseModel):

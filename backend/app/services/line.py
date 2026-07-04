@@ -13,8 +13,21 @@ from linebot.v3.messaging import (
 from app.core.config import settings
 
 
-def _cfg() -> Configuration:
-    return Configuration(access_token=settings.line_channel_access_token)
+def _cfg(access_token: str | None = None) -> Configuration:
+    return Configuration(access_token=access_token or settings.line_channel_access_token)
+
+
+async def connect_line_oa(channel_secret: str, channel_access_token: str) -> dict:
+    """Verify LINE OA credentials by fetching bot info. Returns bot profile on success."""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(
+            "https://api.line.me/v2/bot/info",
+            headers={"Authorization": f"Bearer {channel_access_token}"},
+        )
+        if resp.status_code == 401:
+            raise ValueError("Invalid channel access token")
+        resp.raise_for_status()
+        return resp.json()
 
 
 async def reply_text(reply_token: str, text: str) -> None:
