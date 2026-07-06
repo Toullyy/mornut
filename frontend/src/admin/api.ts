@@ -65,6 +65,13 @@ export function updateDoctorShifts(doctorId: string, shifts: DoctorShift[]): Pro
   })
 }
 
+export function updateDoctor(doctorId: string, data: Partial<DoctorCreate>): Promise<void> {
+  return apiFetch<void>(`/doctors/${doctorId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+}
+
 export function deleteDoctor(doctorId: string): Promise<void> {
   return apiFetch<void>(`/doctors/${doctorId}`, { method: 'DELETE' })
 }

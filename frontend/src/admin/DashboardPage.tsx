@@ -30,6 +30,7 @@ import {
   LayoutGrid,
   KeyRound,
   Loader2,
+  Pencil,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { apiFetch } from '../lib/api'
@@ -41,6 +42,7 @@ import {
   type QuotaLimits,
   fetchDoctors,
   createDoctor as apiCreateDoctor,
+  updateDoctor as apiUpdateDoctor,
   deleteDoctor as apiDeleteDoctor,
   updateDoctorShifts,
   createAdminBooking,
@@ -144,7 +146,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
   return (
     <button
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${checked ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer ${checked ? 'bg-primary' : 'bg-muted-foreground/30'}`}
     >
       <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-4' : 'translate-x-0.5'}`} />
     </button>
@@ -157,7 +159,7 @@ function SettingsSection({ title, icon, children }: { title: string; icon: React
     <div className="bg-card border border-border rounded-xl overflow-hidden">
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-5 py-4 hover:bg-muted/30 transition-colors"
+        className="w-full flex items-center justify-between px-5 py-4 hover:bg-muted/30 transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-2.5">
           <div className="text-primary">{icon}</div>
@@ -274,7 +276,7 @@ function AddQueueModal({
       <div className="bg-card border border-border rounded-2xl shadow-xl w-full max-w-md mx-4 max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
           <h2 className="font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>เพิ่มคิวใหม่</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground">
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground cursor-pointer">
             <X size={16} />
           </button>
         </div>
@@ -396,14 +398,14 @@ function AddQueueModal({
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border shrink-0">
           <button
             onClick={onClose}
-            className="text-sm text-muted-foreground hover:text-foreground px-4 py-2 rounded-lg hover:bg-muted transition-colors"
+            className="text-sm text-muted-foreground hover:text-foreground px-4 py-2 rounded-lg hover:bg-muted transition-colors cursor-pointer"
           >
             ยกเลิก
           </button>
           <button
             onClick={handleSubmit}
             disabled={!isValid || submitting}
-            className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-5 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-5 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors cursor-pointer"
           >
             <Plus size={14} />
             {submitting ? 'กำลังเพิ่ม...' : 'เพิ่มคิว'}
@@ -463,7 +465,7 @@ function AddDoctorModal({
       <div className="bg-card border border-border rounded-2xl shadow-xl w-full max-w-sm mx-4">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <h2 className="font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>เพิ่มแพทย์ใหม่</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground">
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground cursor-pointer">
             <X size={16} />
           </button>
         </div>
@@ -511,7 +513,7 @@ function AddDoctorModal({
                   key={color}
                   type="button"
                   onClick={() => setForm(f => ({ ...f, color }))}
-                  className={`w-8 h-8 rounded-full ${color} transition-all ${
+                  className={`w-8 h-8 rounded-full ${color} transition-all cursor-pointer ${
                     form.color === color
                       ? 'ring-2 ring-offset-2 ring-foreground scale-110'
                       : 'hover:scale-105 opacity-60'
@@ -541,17 +543,153 @@ function AddDoctorModal({
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border">
           <button
             onClick={onClose}
-            className="text-sm text-muted-foreground hover:text-foreground px-4 py-2 rounded-lg hover:bg-muted transition-colors"
+            className="text-sm text-muted-foreground hover:text-foreground px-4 py-2 rounded-lg hover:bg-muted transition-colors cursor-pointer"
           >
             ยกเลิก
           </button>
           <button
             onClick={handleSubmit}
             disabled={!isValid || submitting}
-            className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-5 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-5 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors cursor-pointer"
           >
             <Plus size={14} />
             {submitting ? 'กำลังเพิ่ม...' : 'เพิ่มแพทย์'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Edit Doctor Modal ──────────────────────────────────────────────────────
+
+function EditDoctorModal({
+  doctor,
+  onClose,
+  onSaved,
+}: {
+  doctor: ApiDoctor
+  onClose: () => void
+  onSaved: (updated: ApiDoctor) => void
+}) {
+  const [form, setForm] = useState<DoctorCreate>({
+    name: doctor.name,
+    specialty: doctor.specialty,
+    color: doctor.color,
+    initials: doctor.initials,
+  })
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+
+  const isValid = form.name.trim().length > 0 && form.specialty.trim().length > 0
+
+  const handleSubmit = async () => {
+    if (!isValid) return
+    setSubmitting(true)
+    setError('')
+    try {
+      const initials = form.initials.trim() || computeInitials(form.name)
+      await apiUpdateDoctor(doctor.id, { ...form, initials })
+      onSaved({ ...doctor, ...form, initials })
+    } catch (e) {
+      setError((e as Error).message)
+      setSubmitting(false)
+    }
+  }
+
+  const field = 'w-full text-sm bg-input-background border border-border rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-ring/30'
+  const preview = form.initials.trim() || (form.name ? computeInitials(form.name) : '?')
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-card border border-border rounded-2xl shadow-xl w-full max-w-sm mx-4">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+          <h2 className="font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>แก้ไขข้อมูลแพทย์</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground cursor-pointer">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-muted-foreground">ชื่อ-นามสกุล <span className="text-destructive">*</span></label>
+            <input
+              type="text"
+              value={form.name}
+              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              className={field}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-muted-foreground">ความเชี่ยวชาญ <span className="text-destructive">*</span></label>
+            <input
+              type="text"
+              value={form.specialty}
+              onChange={e => setForm(f => ({ ...f, specialty: e.target.value }))}
+              className={field}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-muted-foreground">อักษรย่อ (ไม่เกิน 2 ตัว)</label>
+            <input
+              type="text"
+              placeholder={form.name ? computeInitials(form.name) : 'อก'}
+              value={form.initials}
+              onChange={e => setForm(f => ({ ...f, initials: e.target.value.substring(0, 2) }))}
+              maxLength={2}
+              className={`${field} w-24 font-mono`}
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-medium text-muted-foreground">สีประจำตัว</label>
+            <div className="flex gap-2 flex-wrap">
+              {DOCTOR_COLORS.map(color => (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, color }))}
+                  className={`w-8 h-8 rounded-full ${color} transition-all cursor-pointer ${
+                    form.color === color
+                      ? 'ring-2 ring-offset-2 ring-foreground scale-110'
+                      : 'hover:scale-105 opacity-60'
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 p-3 bg-muted/30 rounded-xl border border-border">
+            <div className={`w-10 h-10 rounded-xl ${form.color} flex items-center justify-center text-white font-bold text-sm shrink-0`}>
+              {preview}
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-foreground">{form.name || 'ชื่อแพทย์'}</p>
+              <p className="text-xs text-muted-foreground">{form.specialty || 'ความเชี่ยวชาญ'}</p>
+            </div>
+          </div>
+
+          {error && (
+            <p className="text-sm text-destructive bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border">
+          <button
+            onClick={onClose}
+            className="text-sm text-muted-foreground hover:text-foreground px-4 py-2 rounded-lg hover:bg-muted transition-colors cursor-pointer"
+          >
+            ยกเลิก
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!isValid || submitting}
+            className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-5 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors cursor-pointer"
+          >
+            <Save size={14} />
+            {submitting ? 'กำลังบันทึก...' : 'บันทึก'}
           </button>
         </div>
       </div>
@@ -611,13 +749,13 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
           />
           <button
             onClick={onRefresh}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
           >
             <RefreshCw size={14} />รีเฟรช
           </button>
           <button
             onClick={onAddQueue}
-            className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors"
+            className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors cursor-pointer"
           >
             <Plus size={14} />เพิ่มคิว
           </button>
@@ -716,7 +854,7 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
                       <button
                         onClick={() => onAction(b.id, 'done')}
                         disabled={actionLoading !== null}
-                        className="flex-1 text-xs font-semibold bg-emerald-600 text-white px-3 py-2 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                        className="flex-1 text-xs font-semibold bg-emerald-600 text-white px-3 py-2 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors cursor-pointer"
                       >
                         {actionLoading === b.id + 'done' ? '...' : 'เสร็จ'}
                       </button>
@@ -724,7 +862,7 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
                     <button
                       onClick={() => onAction(b.id, 'cancelled')}
                       disabled={actionLoading !== null}
-                      className="flex-1 text-xs font-semibold bg-rose-600 text-white px-3 py-2 rounded-lg hover:bg-rose-700 disabled:opacity-50 transition-colors"
+                      className="flex-1 text-xs font-semibold bg-rose-600 text-white px-3 py-2 rounded-lg hover:bg-rose-700 disabled:opacity-50 transition-colors cursor-pointer"
                     >
                       {actionLoading === b.id + 'cancelled' ? '...' : 'ยกเลิก'}
                     </button>
@@ -779,7 +917,7 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
                             <button
                               onClick={() => onAction(b.id, 'done')}
                               disabled={actionLoading !== null}
-                              className="text-xs font-semibold bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                              className="text-xs font-semibold bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors cursor-pointer"
                             >
                               {actionLoading === b.id + 'done' ? '...' : 'เสร็จ'}
                             </button>
@@ -787,7 +925,7 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
                           <button
                             onClick={() => onAction(b.id, 'cancelled')}
                             disabled={actionLoading !== null}
-                            className="text-xs font-semibold bg-rose-600 text-white px-3 py-1.5 rounded-lg hover:bg-rose-700 disabled:opacity-50 transition-colors"
+                            className="text-xs font-semibold bg-rose-600 text-white px-3 py-1.5 rounded-lg hover:bg-rose-700 disabled:opacity-50 transition-colors cursor-pointer"
                           >
                             {actionLoading === b.id + 'cancelled' ? '...' : 'ยกเลิก'}
                           </button>
@@ -860,17 +998,17 @@ function QuotaView({ date }: { date: string }) {
       <div className="bg-card border border-border rounded-xl p-5">
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-semibold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-            โควตาวันที่ {date}
+            โควตาวันที่ {new Date(date + 'T12:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
           </h2>
           {!editing ? (
-            <button onClick={() => { loadQuota(); setEditing(true) }} className="text-sm text-primary font-medium hover:underline">แก้ไข</button>
+            <button onClick={() => { loadQuota(); setEditing(true) }} className="text-sm text-primary font-medium hover:underline cursor-pointer">แก้ไข</button>
           ) : (
             <div className="flex gap-2">
-              <button onClick={() => setEditing(false)} className="text-sm text-muted-foreground hover:text-foreground">ยกเลิก</button>
+              <button onClick={() => setEditing(false)} className="text-sm text-muted-foreground hover:text-foreground cursor-pointer">ยกเลิก</button>
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="text-sm bg-primary text-primary-foreground font-medium px-3 py-1.5 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+                className="text-sm bg-primary text-primary-foreground font-medium px-3 py-1.5 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-1.5 cursor-pointer"
               >
                 <Save size={13} />{saving ? 'กำลังบันทึก...' : saved ? 'บันทึกแล้ว' : 'บันทึก'}
               </button>
@@ -929,6 +1067,8 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
   const [savingShifts, setSavingShifts] = useState(false)
   const [shiftsSaved, setShiftsSaved] = useState(false)
   const [shiftError, setShiftError] = useState('')
+  const [confirmSave, setConfirmSave] = useState(false)
+  const [editingDoctor, setEditingDoctor] = useState<ApiDoctor | null>(null)
 
   const loadDoctors = useCallback(() => {
     if (!clinicId) { setLoadingDoctors(false); return }
@@ -961,6 +1101,7 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
   }
 
   const handleSaveShifts = async () => {
+    setConfirmSave(false)
     setSavingShifts(true)
     setShiftError('')
     try {
@@ -993,6 +1134,11 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
     }
   }
 
+  const handleDoctorUpdated = (updated: ApiDoctor) => {
+    setDoctorList(prev => prev.map(d => d.id === updated.id ? updated : d))
+    setEditingDoctor(null)
+  }
+
   const handleDoctorCreated = (newDoc: ApiDoctor) => {
     setDoctorList(prev => [...prev, newDoc])
     setShifts(prev => [
@@ -1013,6 +1159,13 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
           onCreated={handleDoctorCreated}
         />
       )}
+      {editingDoctor && (
+        <EditDoctorModal
+          doctor={editingDoctor}
+          onClose={() => setEditingDoctor(null)}
+          onSaved={handleDoctorUpdated}
+        />
+      )}
 
       <div className="flex items-center justify-between">
         <div>
@@ -1021,7 +1174,7 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
         </div>
         <button
           onClick={() => setShowAddDoctor(true)}
-          className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors"
+          className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors cursor-pointer"
         >
           <Plus size={14} />เพิ่มแพทย์
         </button>
@@ -1040,19 +1193,34 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
             {doctorList.map(doc => {
               const workDays = DAYS.filter(d => { const s = getShift(doc.id, d); return s && (s.morning || s.afternoon) }).length
               return (
-                <button
+                <div
                   key={doc.id}
                   onClick={() => setSelectedDoctor(selectedDoctor === doc.id ? null : doc.id)}
-                  className={`bg-card border rounded-xl p-4 text-left transition-all hover:shadow-sm ${selectedDoctor === doc.id ? 'border-primary ring-2 ring-primary/20' : 'border-border'}`}
+                  className={`relative bg-card border rounded-xl p-4 text-left transition-all hover:shadow-sm cursor-pointer ${selectedDoctor === doc.id ? 'border-primary ring-2 ring-primary/20' : 'border-border'}`}
                 >
+                  <button
+                    onClick={e => { e.stopPropagation(); setEditingDoctor(doc) }}
+                    className="absolute top-2 right-2 p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors cursor-pointer opacity-0 group-hover:opacity-100"
+                    title="แก้ไขข้อมูล"
+                    style={{ opacity: undefined }}
+                  >
+                    <Pencil size={11} />
+                  </button>
                   <div className="flex items-center gap-3 mb-3">
-                    <div className={`w-10 h-10 rounded-xl ${doc.color} flex items-center justify-center text-white font-bold text-sm`}>
+                    <div className={`w-10 h-10 rounded-xl ${doc.color} flex items-center justify-center text-white font-bold text-sm shrink-0`}>
                       {doc.initials || doc.name.substring(0, 2)}
                     </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-foreground truncate leading-tight">{doc.name}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-foreground truncate leading-tight pr-4">{doc.name}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">{doc.specialty}</p>
                     </div>
+                    <button
+                      onClick={e => { e.stopPropagation(); setEditingDoctor(doc) }}
+                      className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors cursor-pointer shrink-0"
+                      title="แก้ไขข้อมูล"
+                    >
+                      <Pencil size={11} />
+                    </button>
                   </div>
                   <div className="flex items-center gap-1">
                     {DAY_SHORT.map((d, i) => {
@@ -1061,7 +1229,7 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
                       const both = s && s.morning && s.afternoon
                       return (
                         <div key={d} className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold transition-colors ${
-                          both ? `${doc.color} text-white` : active ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'
+                          both ? `${doc.color} text-white` : active ? `${doc.color} text-white opacity-60` : 'bg-muted text-muted-foreground'
                         }`}>
                           {d}
                         </div>
@@ -1069,7 +1237,7 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
                     })}
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">{workDays} วัน/สัปดาห์</p>
-                </button>
+                </div>
               )
             })}
           </div>
@@ -1083,18 +1251,36 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
               </h2>
               <div className="flex items-center gap-2">
                 {selectedDoctor && (
-                  <button onClick={() => setSelectedDoctor(null)} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
+                  <button onClick={() => setSelectedDoctor(null)} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer">
                     <X size={12} />ดูทั้งหมด
                   </button>
                 )}
-                <button
-                  onClick={handleSaveShifts}
-                  disabled={savingShifts}
-                  className="flex items-center gap-1.5 text-sm bg-primary text-primary-foreground font-medium px-3 py-1.5 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
-                >
-                  <Save size={13} />
-                  {savingShifts ? 'กำลังบันทึก...' : shiftsSaved ? 'บันทึกแล้ว ✓' : 'บันทึกตาราง'}
-                </button>
+                {confirmSave ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">บันทึกตารางนี้?</span>
+                    <button
+                      onClick={handleSaveShifts}
+                      className="text-xs font-semibold bg-primary text-primary-foreground px-3 py-1.5 rounded-lg hover:bg-primary/90 transition-colors cursor-pointer"
+                    >
+                      ยืนยัน
+                    </button>
+                    <button
+                      onClick={() => setConfirmSave(false)}
+                      className="text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 rounded-lg hover:bg-muted transition-colors cursor-pointer"
+                    >
+                      ยกเลิก
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setConfirmSave(true)}
+                    disabled={savingShifts}
+                    className="flex items-center gap-1.5 text-sm bg-primary text-primary-foreground font-medium px-3 py-1.5 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors cursor-pointer"
+                  >
+                    <Save size={13} />
+                    {savingShifts ? 'กำลังบันทึก...' : shiftsSaved ? 'บันทึกแล้ว ✓' : 'บันทึกตาราง'}
+                  </button>
+                )}
               </div>
             </div>
             <div className="overflow-x-auto">
@@ -1105,7 +1291,7 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
                     {DAYS.map(day => (
                       <th key={day} className="text-center px-2 py-3 text-xs font-semibold text-muted-foreground min-w-24">{day}</th>
                     ))}
-                    <th className="px-3 py-3 text-xs font-semibold text-muted-foreground text-center w-16">ลบ</th>
+                    <th className="px-3 py-3 text-xs font-semibold text-muted-foreground text-center w-24">จัดการ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1131,7 +1317,7 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
                                 <button
                                   key={period}
                                   onClick={() => toggleShift(doc.id, day, period)}
-                                  className={`w-10 h-7 rounded text-[10px] font-medium transition-colors ${
+                                  className={`w-10 h-7 rounded text-[10px] font-medium transition-colors cursor-pointer ${
                                     s?.[period]
                                       ? `${doc.color} text-white`
                                       : 'bg-muted text-muted-foreground hover:bg-muted-foreground/20'
@@ -1149,24 +1335,34 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
                           <div className="flex flex-col items-center gap-1">
                             <button
                               onClick={() => handleDeleteDoctor(doc.id)}
-                              className="text-[10px] font-medium text-white bg-rose-600 px-2 py-1 rounded hover:bg-rose-700 transition-colors"
+                              className="text-[10px] font-medium text-white bg-rose-600 px-2 py-1 rounded hover:bg-rose-700 transition-colors cursor-pointer"
                             >
                               ยืนยัน
                             </button>
                             <button
                               onClick={() => setConfirmDelete(null)}
-                              className="text-[10px] text-muted-foreground hover:text-foreground"
+                              className="text-[10px] text-muted-foreground hover:text-foreground cursor-pointer"
                             >
                               ยกเลิก
                             </button>
                           </div>
                         ) : (
-                          <button
-                            onClick={() => setConfirmDelete(doc.id)}
-                            className="p-1.5 text-muted-foreground hover:text-destructive transition-colors rounded"
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => setEditingDoctor(doc)}
+                              className="p-1.5 text-muted-foreground hover:text-primary transition-colors rounded cursor-pointer"
+                              title="แก้ไขข้อมูล"
+                            >
+                              <Pencil size={13} />
+                            </button>
+                            <button
+                              onClick={() => setConfirmDelete(doc.id)}
+                              className="p-1.5 text-muted-foreground hover:text-destructive transition-colors rounded cursor-pointer"
+                              title="ลบ"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -1330,7 +1526,7 @@ function LineOAConnectSection() {
           <button
             onClick={() => run('connect', () => saveLineCredentials(CLINIC_ID, secret, token), 'เชื่อมต่อสำเร็จ')}
             disabled={loading === 'connect' || (!secret && !token)}
-            className="flex items-center gap-2 bg-primary text-primary-foreground font-medium px-4 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors text-sm"
+            className="flex items-center gap-2 bg-primary text-primary-foreground font-medium px-4 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors text-sm cursor-pointer"
           >
             {loading === 'connect' ? <Loader2 size={14} className="animate-spin" /> : <KeyRound size={14} />}
             บันทึกและเชื่อมต่อ
@@ -1359,7 +1555,7 @@ function LineOAConnectSection() {
               <button
                 onClick={() => run('webhook', () => enableWebhook(CLINIC_ID, webhookUrl.trim()), 'ตั้งค่า Webhook สำเร็จ')}
                 disabled={loading === 'webhook' || !webhookUrl.trim()}
-                className="flex items-center gap-2 border border-border text-foreground font-medium px-4 py-2 rounded-lg hover:bg-foreground/5 disabled:opacity-50 transition-colors text-sm"
+                className="flex items-center gap-2 border border-border text-foreground font-medium px-4 py-2 rounded-lg hover:bg-foreground/5 disabled:opacity-50 transition-colors text-sm cursor-pointer"
               >
                 {loading === 'webhook' ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />}
                 ใช้ webhook
@@ -1387,7 +1583,7 @@ function LineOAConnectSection() {
               <button
                 onClick={() => run('richmenu', () => setupRichMenu(CLINIC_ID), 'ตั้งค่า Rich Menu สำเร็จ')}
                 disabled={loading === 'richmenu'}
-                className="flex items-center gap-2 border border-border text-foreground font-medium px-4 py-2 rounded-lg hover:bg-foreground/5 disabled:opacity-50 transition-colors text-sm"
+                className="flex items-center gap-2 border border-border text-foreground font-medium px-4 py-2 rounded-lg hover:bg-foreground/5 disabled:opacity-50 transition-colors text-sm cursor-pointer"
               >
                 {loading === 'richmenu' ? <Loader2 size={14} className="animate-spin" /> : <LayoutGrid size={14} />}
                 {s?.rich_menu_id ? 'สร้างใหม่' : 'ตั้งค่า Rich Menu'}
@@ -1396,7 +1592,7 @@ function LineOAConnectSection() {
                 <button
                   onClick={() => run('delrich', () => deleteRichMenu(CLINIC_ID), 'ลบ Rich Menu แล้ว')}
                   disabled={loading === 'delrich'}
-                  className="flex items-center gap-2 border border-destructive/30 text-destructive font-medium px-4 py-2 rounded-lg hover:bg-destructive/10 disabled:opacity-50 transition-colors text-sm"
+                  className="flex items-center gap-2 border border-destructive/30 text-destructive font-medium px-4 py-2 rounded-lg hover:bg-destructive/10 disabled:opacity-50 transition-colors text-sm cursor-pointer"
                 >
                   {loading === 'delrich' ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                   ลบ
@@ -1541,7 +1737,7 @@ function SettingsView() {
       </SettingsSection>
 
       <div className="flex justify-end">
-        <button className="flex items-center gap-2 bg-primary text-primary-foreground font-medium px-5 py-2.5 rounded-lg hover:bg-primary/90 transition-colors text-sm">
+        <button className="flex items-center gap-2 bg-primary text-primary-foreground font-medium px-5 py-2.5 rounded-lg hover:bg-primary/90 transition-colors text-sm cursor-pointer">
           <Save size={14} />บันทึกการตั้งค่าทั้งหมด
         </button>
       </div>
@@ -1629,7 +1825,7 @@ export default function DashboardPage() {
             <button
               key={item.id}
               onClick={() => setActiveNav(item.id)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-colors text-left ${
+              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-colors text-left cursor-pointer ${
                 activeNav === item.id ? 'bg-primary text-white font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
               }`}
             >
@@ -1647,7 +1843,7 @@ export default function DashboardPage() {
               <p className="text-xs font-semibold text-foreground truncate">{user.email ?? 'แอดมิน'}</p>
               <button
                 onClick={logout}
-                className="text-[10px] text-muted-foreground hover:text-destructive transition-colors"
+                className="text-[10px] text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
               >
                 ออกจากระบบ
               </button>
@@ -1681,7 +1877,7 @@ export default function DashboardPage() {
                 </span>
               )}
             </div>
-            <button className="relative p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+            <button className="relative p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground cursor-pointer">
               <Bell size={16} />
               {pendingCount > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-yellow-500 rounded-full" />}
             </button>
