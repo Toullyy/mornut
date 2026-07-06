@@ -31,6 +31,8 @@ import {
   KeyRound,
   Loader2,
   Pencil,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { apiFetch } from '../lib/api'
@@ -123,6 +125,74 @@ const statusConfig: Record<Status, { label: string; className: string; icon: Rea
   done: { label: 'เสร็จสิ้น', className: 'bg-slate-100 text-slate-500 border border-slate-200', icon: <BadgeCheck size={11} /> },
   no_show: { label: 'ไม่มา', className: 'bg-red-50 text-red-600 border border-red-200', icon: <XCircle size={11} /> },
   cancelled: { label: 'ยกเลิก', className: 'bg-rose-50 text-rose-500 border border-rose-200', icon: <XCircle size={11} /> },
+}
+
+function Pagination({
+  page,
+  total,
+  pageSize,
+  onChange,
+}: {
+  page: number
+  total: number
+  pageSize: number
+  onChange: (p: number) => void
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  if (totalPages <= 1) return null
+
+  const from = (page - 1) * pageSize + 1
+  const to = Math.min(page * pageSize, total)
+
+  const pages: (number | '…')[] = []
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i)
+  } else {
+    pages.push(1)
+    if (page > 3) pages.push('…')
+    for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) pages.push(i)
+    if (page < totalPages - 2) pages.push('…')
+    pages.push(totalPages)
+  }
+
+  const btn = 'min-w-[2rem] h-8 px-1 flex items-center justify-center rounded-lg text-xs font-medium transition-colors cursor-pointer'
+
+  return (
+    <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-muted/20 flex-wrap gap-2">
+      <span className="text-xs text-muted-foreground">
+        แสดง {from}–{to} จาก {total} รายการ
+      </span>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => onChange(page - 1)}
+          disabled={page === 1}
+          className={`${btn} ${page === 1 ? 'opacity-40' : 'hover:bg-muted text-muted-foreground hover:text-foreground'}`}
+        >
+          <ChevronLeft size={14} />
+        </button>
+        {pages.map((p, i) =>
+          p === '…' ? (
+            <span key={`e${i}`} className="min-w-[2rem] h-8 flex items-center justify-center text-xs text-muted-foreground">…</span>
+          ) : (
+            <button
+              key={p}
+              onClick={() => onChange(p as number)}
+              className={`${btn} ${p === page ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground hover:text-foreground'}`}
+            >
+              {p}
+            </button>
+          )
+        )}
+        <button
+          onClick={() => onChange(page + 1)}
+          disabled={page === totalPages}
+          className={`${btn} ${page === totalPages ? 'opacity-40' : 'hover:bg-muted text-muted-foreground hover:text-foreground'}`}
+        >
+          <ChevronRight size={14} />
+        </button>
+      </div>
+    </div>
+  )
 }
 
 function StatusBadge({ status }: { status: Status }) {
@@ -713,6 +783,8 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<Status | 'all'>('all')
   const [filterCoverage, setFilterCoverage] = useState<Coverage | 'all'>('all')
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 15
 
   const filtered = bookings.filter(b => {
     const matchSearch = b.patient_name.includes(search) || b.phone.includes(search) || b.id.includes(search)
@@ -720,6 +792,10 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
     const matchCov = filterCoverage === 'all' || b.coverage === filterCoverage
     return matchSearch && matchStatus && matchCov
   })
+
+  useEffect(() => { setPage(1) }, [search, filterStatus, filterCoverage, date, bookings.length])
+
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   const stats = {
     total: bookings.length,
@@ -831,7 +907,7 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
           {!loading && filtered.length === 0 && (
             <p className="text-center py-12 text-muted-foreground text-sm">ไม่พบข้อมูลที่ค้นหา</p>
           )}
-          {filtered.map(b => {
+          {paginated.map(b => {
             const isTerminal = b.status === 'done' || b.status === 'cancelled' || b.status === 'no_show'
             return (
               <div key={b.id} className={`p-4 flex flex-col gap-2 ${isTerminal ? 'opacity-60' : ''}`}>
@@ -888,7 +964,7 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
               </tr>
             </thead>
             <tbody>
-              {filtered.map(b => {
+              {paginated.map(b => {
                 const isTerminal = b.status === 'done' || b.status === 'cancelled' || b.status === 'no_show'
                 return (
                   <tr
@@ -945,6 +1021,7 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
             </tbody>
           </table>
         </div>
+        <Pagination page={page} total={filtered.length} pageSize={PAGE_SIZE} onChange={setPage} />
       </div>
     </div>
   )
@@ -1368,11 +1445,18 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
 
 function PatientsView({ bookings }: { bookings: Booking[] }) {
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 20
+
   const uniquePatients = bookings.reduce((acc, b) => {
     if (!acc.find(p => p.phone === b.phone)) acc.push(b)
     return acc
   }, [] as Booking[])
   const filtered = uniquePatients.filter(p => p.patient_name.includes(search) || p.phone.includes(search))
+
+  useEffect(() => { setPage(1) }, [search])
+
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   return (
     <div className="flex flex-col gap-6">
@@ -1403,7 +1487,7 @@ function PatientsView({ bookings }: { bookings: Booking[] }) {
             </tr>
           </thead>
           <tbody>
-            {filtered.map(p => (
+            {paginated.map(p => (
               <tr key={p.id} className="border-b border-border last:border-0 hover:bg-secondary/50 transition-colors cursor-pointer">
                 <td className="px-4 py-3.5">
                   <div className="flex items-center gap-3">
@@ -1423,6 +1507,7 @@ function PatientsView({ bookings }: { bookings: Booking[] }) {
             )}
           </tbody>
         </table>
+        <Pagination page={page} total={filtered.length} pageSize={PAGE_SIZE} onChange={setPage} />
       </div>
     </div>
   )
