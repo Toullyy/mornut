@@ -1196,32 +1196,53 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
                 <div
                   key={doc.id}
                   onClick={() => setSelectedDoctor(selectedDoctor === doc.id ? null : doc.id)}
-                  className={`relative bg-card border rounded-xl p-4 text-left transition-all hover:shadow-sm cursor-pointer ${selectedDoctor === doc.id ? 'border-primary ring-2 ring-primary/20' : 'border-border'}`}
+                  className={`bg-card border rounded-xl p-4 text-left transition-all hover:shadow-sm cursor-pointer ${selectedDoctor === doc.id ? 'border-primary ring-2 ring-primary/20' : 'border-border'}`}
                 >
-                  <button
-                    onClick={e => { e.stopPropagation(); setEditingDoctor(doc) }}
-                    className="absolute top-2 right-2 p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors cursor-pointer opacity-0 group-hover:opacity-100"
-                    title="แก้ไขข้อมูล"
-                    style={{ opacity: undefined }}
-                  >
-                    <Pencil size={11} />
-                  </button>
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className={`w-10 h-10 rounded-xl ${doc.color} flex items-center justify-center text-white font-bold text-sm shrink-0`}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className={`w-9 h-9 rounded-xl ${doc.color} flex items-center justify-center text-white font-bold text-sm shrink-0`}>
                       {doc.initials || doc.name.substring(0, 2)}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-foreground truncate leading-tight pr-4">{doc.name}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{doc.specialty}</p>
+                      <p className="text-sm font-semibold text-foreground truncate leading-tight">{doc.name}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5 truncate">{doc.specialty}</p>
                     </div>
-                    <button
-                      onClick={e => { e.stopPropagation(); setEditingDoctor(doc) }}
-                      className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors cursor-pointer shrink-0"
-                      title="แก้ไขข้อมูล"
-                    >
-                      <Pencil size={11} />
-                    </button>
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <button
+                        onClick={e => { e.stopPropagation(); setEditingDoctor(doc) }}
+                        className="p-1.5 text-muted-foreground hover:text-primary hover:bg-muted rounded-lg transition-colors cursor-pointer"
+                        title="แก้ไข"
+                      >
+                        <Pencil size={11} />
+                      </button>
+                      <button
+                        onClick={e => { e.stopPropagation(); setConfirmDelete(confirmDelete === doc.id ? null : doc.id) }}
+                        className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-muted rounded-lg transition-colors cursor-pointer"
+                        title="ลบ"
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
                   </div>
+                  {confirmDelete === doc.id && (
+                    <div
+                      onClick={e => e.stopPropagation()}
+                      className="flex items-center gap-2 mb-3 px-2.5 py-2 bg-rose-50 border border-rose-200 rounded-lg"
+                    >
+                      <span className="text-xs text-rose-700 flex-1">ลบแพทย์นี้?</span>
+                      <button
+                        onClick={() => handleDeleteDoctor(doc.id)}
+                        className="text-[10px] font-semibold text-white bg-rose-600 px-2 py-1 rounded hover:bg-rose-700 transition-colors cursor-pointer"
+                      >
+                        ยืนยัน
+                      </button>
+                      <button
+                        onClick={() => setConfirmDelete(null)}
+                        className="text-[10px] text-muted-foreground hover:text-foreground cursor-pointer"
+                      >
+                        ยกเลิก
+                      </button>
+                    </div>
+                  )}
                   <div className="flex items-center gap-1">
                     {DAY_SHORT.map((d, i) => {
                       const s = getShift(doc.id, DAYS[i])
@@ -1291,7 +1312,6 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
                     {DAYS.map(day => (
                       <th key={day} className="text-center px-2 py-3 text-xs font-semibold text-muted-foreground min-w-24">{day}</th>
                     ))}
-                    <th className="px-3 py-3 text-xs font-semibold text-muted-foreground text-center w-24">จัดการ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1330,41 +1350,6 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
                           </td>
                         )
                       })}
-                      <td className="px-3 py-4 text-center">
-                        {confirmDelete === doc.id ? (
-                          <div className="flex flex-col items-center gap-1">
-                            <button
-                              onClick={() => handleDeleteDoctor(doc.id)}
-                              className="text-[10px] font-medium text-white bg-rose-600 px-2 py-1 rounded hover:bg-rose-700 transition-colors cursor-pointer"
-                            >
-                              ยืนยัน
-                            </button>
-                            <button
-                              onClick={() => setConfirmDelete(null)}
-                              className="text-[10px] text-muted-foreground hover:text-foreground cursor-pointer"
-                            >
-                              ยกเลิก
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              onClick={() => setEditingDoctor(doc)}
-                              className="p-1.5 text-muted-foreground hover:text-primary transition-colors rounded cursor-pointer"
-                              title="แก้ไขข้อมูล"
-                            >
-                              <Pencil size={13} />
-                            </button>
-                            <button
-                              onClick={() => setConfirmDelete(doc.id)}
-                              className="p-1.5 text-muted-foreground hover:text-destructive transition-colors rounded cursor-pointer"
-                              title="ลบ"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                        )}
-                      </td>
                     </tr>
                   ))}
                 </tbody>
