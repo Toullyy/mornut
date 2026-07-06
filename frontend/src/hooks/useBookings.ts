@@ -1,21 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch, getToken } from '../lib/api'
 
-interface UseCollectionResult<T> {
+interface UseBookingsResult<T> {
   data: T[]
   loading: boolean
   error: Error | null
   refetch: () => void
 }
 
-/**
- * Polls GET /admin/bookings?date=... every 30 seconds.
- * Drop-in replacement for the old useFirestoreCollection hook.
- */
-export function useFirestoreCollection<T extends { id: string }>(
-  _collectionName: string,
+export function useBookings<T extends { id: string }>(
   constraints: { date?: string; clinicId?: string } = {},
-): UseCollectionResult<T> {
+): UseBookingsResult<T> {
   const [data, setData] = useState<T[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
@@ -27,6 +22,7 @@ export function useFirestoreCollection<T extends { id: string }>(
 
   useEffect(() => {
     cancelledRef.current = false
+    setLoading(true)
 
     async function fetchData() {
       if (!getToken()) {

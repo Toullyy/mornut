@@ -33,7 +33,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { apiFetch } from '../lib/api'
-import { useFirestoreCollection } from '../hooks/useFirestore'
+import { useBookings } from '../hooks/useBookings'
 import AdminLogin from './AdminLogin'
 import {
   updateBookingStatus,
@@ -1559,10 +1559,7 @@ export default function DashboardPage() {
 
   const constraints = useMemo(() => ({ date, clinicId: CLINIC_ID }), [date])
 
-  const { data: bookings, loading: bLoading, error, refetch } = useFirestoreCollection<Booking>(
-    'bookings',
-    constraints,
-  )
+  const { data: bookings, loading: bLoading, error, refetch } = useBookings<Booking>(constraints)
 
   if (authLoading) return <FullPage>กำลังโหลด...</FullPage>
   if (!user) return <AdminLogin onLogin={(u) => { onLogin(u); refetch() }} />
@@ -1571,6 +1568,7 @@ export default function DashboardPage() {
     setActionLoading(bookingId + action)
     try {
       await updateBookingStatus(bookingId, action)
+      refetch()
     } finally {
       setActionLoading(null)
     }

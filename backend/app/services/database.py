@@ -435,6 +435,11 @@ def create_admin_booking(
                 "WHERE clinic_id = %s AND date = %s AND time = %s",
                 (clinic_id, date, time_slot),
             )
+            cur.execute(
+                "UPDATE quotas SET used_count = used_count + 1 "
+                "WHERE clinic_id = %s AND date = %s AND coverage = %s",
+                (clinic_id, date, coverage),
+            )
 
     return booking_id
 
