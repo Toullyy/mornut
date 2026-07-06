@@ -10,6 +10,13 @@ from app.routers import admin, booking, clinics, doctors, internal, quota, slip,
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Ensure tables not present in an already-initialised volume exist (e.g. line_settings).
+    try:
+        from app.services.database import ensure_schema
+        await asyncio.to_thread(ensure_schema)
+    except Exception as e:
+        print(f"[STARTUP] ensure_schema failed (non-fatal): {e}")
+
     if settings.debug_mode:
         try:
             from app.services.dev_seed import reseed_today

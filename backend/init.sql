@@ -87,3 +87,18 @@ CREATE TABLE IF NOT EXISTS doctor_shifts (
     afternoon   BOOLEAN NOT NULL DEFAULT FALSE,
     UNIQUE (doctor_id, day_of_week)
 );
+
+-- Per-clinic LINE Official Account connection settings (one row per clinic).
+-- Populated from the admin Settings page ("เชื่อมต่อ LINE OA").
+CREATE TABLE IF NOT EXISTS line_settings (
+    clinic_id            TEXT PRIMARY KEY,
+    channel_secret       TEXT NOT NULL DEFAULT '',
+    channel_access_token TEXT NOT NULL DEFAULT '',
+    bot_user_id          TEXT NOT NULL DEFAULT '',
+    bot_display_name     TEXT NOT NULL DEFAULT '',
+    bot_picture_url      TEXT NOT NULL DEFAULT '',
+    webhook_url          TEXT NOT NULL DEFAULT '',
+    webhook_active       BOOLEAN NOT NULL DEFAULT FALSE,
+    rich_menu_id         TEXT NOT NULL DEFAULT '',
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

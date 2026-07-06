@@ -437,3 +437,75 @@ def create_admin_booking(
             )
 
     return booking_id
+
+
+# ── LINE OA settings ──────────────────────────────────────────────────────────
+
+# Columns clients are allowed to upsert (clinic_id is the key, updated_at is set automatically).
+_LINE_SETTINGS_FIELDS = (
+    "channel_secret",
+    "channel_access_token",
+    "bot_user_id",
+    "bot_display_name",
+    "bot_picture_url",
+    "webhook_url",
+    "webhook_active",
+    "rich_menu_id",
+)
+
+
+def ensure_schema() -> None:
+    """Idempotently create tables that may be missing on an already-initialised DB.
+
+    init.sql runs only on a fresh Postgres volume, so newer tables (e.g. line_settings)
+    are created here at startup to avoid requiring a manual migration on existing volumes.
+    """
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS line_settings (
+                    clinic_id            TEXT PRIMARY KEY,
+                    channel_secret       TEXT NOT NULL DEFAULT '',
+                    channel_access_token TEXT NOT NULL DEFAULT '',
+                    bot_user_id          TEXT NOT NULL DEFAULT '',
+                    bot_display_name     TEXT NOT NULL DEFAULT '',
+                    bot_picture_url      TEXT NOT NULL DEFAULT '',
+                    webhook_url          TEXT NOT NULL DEFAULT '',
+                    webhook_active       BOOLEAN NOT NULL DEFAULT FALSE,
+                    rich_menu_id         TEXT NOT NULL DEFAULT '',
+                    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+
+
+def get_line_settings(clinic_id: str) -> Optional[dict]:
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute("SELECT * FROM line_settings WHERE clinic_id = %s", (clinic_id,))
+            row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def upsert_line_settings(clinic_id: str, **fields) -> dict:
+    """Insert or update a clinic's LINE settings. Only known columns are written."""
+    cols = [f for f in fields if f in _LINE_SETTINGS_FIELDS]
+    values = [fields[c] for c in cols]
+
+    insert_cols = ["clinic_id", *cols]
+    placeholders = ", ".join(["%s"] * len(insert_cols))
+    updates = ", ".join(f"{c} = EXCLUDED.{c}" for c in cols)
+    update_clause = f"{updates}, updated_at = NOW()" if updates else "updated_at = NOW()"
+
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                f"INSERT INTO line_settings ({', '.join(insert_cols)}) "
+                f"VALUES ({placeholders}) "
+                f"ON CONFLICT (clinic_id) DO UPDATE SET {update_clause} "
+                f"RETURNING *",
+                [clinic_id, *values],
+            )
+            row = cur.fetchone()
+    return dict(row)

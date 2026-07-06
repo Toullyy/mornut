@@ -8,7 +8,9 @@ services:
       POSTGRES_PASSWORD: mornut
       POSTGRES_DB: mornut
     ports:
-      - "5433:5432"
+      # Host 5433 is taken by a locally-installed PostgreSQL on this machine,
+      # so map to 5455 instead. Update DATABASE_URL in backend/.env to match.
+      - "5455:5432"
     volumes:
       - mornut_pgdata:/var/lib/postgresql/data
       - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql

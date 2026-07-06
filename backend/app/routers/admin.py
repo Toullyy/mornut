@@ -14,6 +14,7 @@ from app.core.db import cursor, get_conn  # used by debug/db endpoint
 from app.models.booking import BookingOut
 from app.services import database as repo
 from app.services.booking_service import _to_out
+from app.services import line as line_service
 from app.services.line import connect_line_oa
 
 router = APIRouter()
@@ -122,6 +123,175 @@ async def dev_connect(body: LineOAConnect) -> dict:
             "markAsReadMode": "auto",
         },
     }
+
+
+# ── LINE OA settings (connect / webhook / rich menu) ────────────────────────────
+
+class LineCredentials(BaseModel):
+    channel_secret: str
+    channel_access_token: str
+    clinic_id: str = ""
+
+
+class WebhookSetup(BaseModel):
+    webhook_url: str
+    clinic_id: str = ""
+
+
+class RichMenuSetup(BaseModel):
+    clinic_id: str = ""
+
+
+def _mask_token(token: str) -> str:
+    if not token:
+        return ""
+    return "••••••••" + token[-4:] if len(token) > 4 else "••••"
+
+
+def _settings_public(row: dict | None) -> dict:
+    """Shape a line_settings row for the client, never exposing the raw token."""
+    if not row:
+        return {
+            "has_credentials": False,
+            "connected": False,
+            "bot": None,
+            "webhook_url": "",
+            "webhook_active": False,
+            "rich_menu_id": "",
+            "masked_token": "",
+        }
+    has = bool(row.get("channel_access_token"))
+    bot = None
+    if row.get("bot_user_id") or row.get("bot_display_name"):
+        bot = {
+            "userId": row.get("bot_user_id", ""),
+            "displayName": row.get("bot_display_name", ""),
+            "pictureUrl": row.get("bot_picture_url", ""),
+        }
+    return {
+        "has_credentials": has,
+        "connected": has,
+        "bot": bot,
+        "webhook_url": row.get("webhook_url", ""),
+        "webhook_active": bool(row.get("webhook_active", False)),
+        "rich_menu_id": row.get("rich_menu_id", ""),
+        "masked_token": _mask_token(row.get("channel_access_token", "")),
+    }
+
+
+@router.get("/line-oa/settings")
+async def get_line_oa_settings(clinic_id: str = "", _admin: AdminUser = None) -> dict:
+    """Return the current LINE OA connection state for a clinic (token masked)."""
+    cid = clinic_id or settings.clinic_id
+    row = await asyncio.to_thread(repo.get_line_settings, cid)
+    return _settings_public(row)
+
+
+@router.post("/line-oa/settings")
+async def save_line_oa_settings(body: LineCredentials, _admin: AdminUser = None) -> dict:
+    """Verify and persist a clinic's LINE channel secret + access token."""
+    cid = body.clinic_id or settings.clinic_id
+    if not body.channel_secret or not body.channel_access_token:
+        raise HTTPException(
+            status_code=400,
+            detail="กรุณากรอก Channel Secret และ Channel Access Token",
+        )
+
+    if settings.debug_mode:
+        bot = {"userId": "dev-bot", "displayName": "Dev Clinic OA", "pictureUrl": ""}
+    else:
+        try:
+            bot = await connect_line_oa(body.channel_secret, body.channel_access_token)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"LINE API error: {e}")
+
+    row = await asyncio.to_thread(
+        repo.upsert_line_settings,
+        cid,
+        channel_secret=body.channel_secret,
+        channel_access_token=body.channel_access_token,
+        bot_user_id=bot.get("userId", ""),
+        bot_display_name=bot.get("displayName", ""),
+        bot_picture_url=bot.get("pictureUrl", ""),
+    )
+    return _settings_public(row)
+
+
+@router.post("/line-oa/webhook")
+async def setup_line_oa_webhook(body: WebhookSetup, _admin: AdminUser = None) -> dict:
+    """Register the webhook endpoint URL with LINE and mark it active."""
+    cid = body.clinic_id or settings.clinic_id
+    url = body.webhook_url.strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="กรุณาระบุ Webhook URL")
+
+    row = await asyncio.to_thread(repo.get_line_settings, cid)
+    if not row or not row.get("channel_access_token"):
+        raise HTTPException(status_code=400, detail="กรุณาเชื่อมต่อ LINE OA ก่อน")
+
+    if not settings.debug_mode:
+        try:
+            await line_service.set_webhook_endpoint(row["channel_access_token"], url)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"LINE API error: {e}")
+
+    row = await asyncio.to_thread(
+        repo.upsert_line_settings, cid, webhook_url=url, webhook_active=True
+    )
+    return _settings_public(row)
+
+
+@router.post("/line-oa/rich-menu")
+async def setup_line_oa_rich_menu(
+    body: RichMenuSetup | None = None, _admin: AdminUser = None
+) -> dict:
+    """Create + publish a default rich menu and persist its id."""
+    cid = (body.clinic_id if body else "") or settings.clinic_id
+    row = await asyncio.to_thread(repo.get_line_settings, cid)
+    if not row or not row.get("channel_access_token"):
+        raise HTTPException(status_code=400, detail="กรุณาเชื่อมต่อ LINE OA ก่อน")
+
+    if settings.debug_mode:
+        rich_menu_id = "richmenu-dev00000000000000000000000000"
+    else:
+        liff_url = settings.liff_url
+        if not liff_url or "YOUR_LIFF_ID" in liff_url:
+            raise HTTPException(
+                status_code=400,
+                detail="กรุณาตั้งค่า LIFF_URL ใน backend/.env ก่อนสร้าง Rich Menu",
+            )
+        try:
+            rich_menu_id = await line_service.create_and_publish_rich_menu(
+                row["channel_access_token"], liff_url
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"LINE API error: {e}")
+
+    row = await asyncio.to_thread(repo.upsert_line_settings, cid, rich_menu_id=rich_menu_id)
+    return _settings_public(row)
+
+
+@router.delete("/line-oa/rich-menu")
+async def delete_line_oa_rich_menu(clinic_id: str = "", _admin: AdminUser = None) -> dict:
+    """Delete the current rich menu (if any) and clear its id."""
+    cid = clinic_id or settings.clinic_id
+    row = await asyncio.to_thread(repo.get_line_settings, cid)
+    if row and row.get("rich_menu_id") and not settings.debug_mode:
+        try:
+            await line_service.delete_rich_menu(
+                row["channel_access_token"], row["rich_menu_id"]
+            )
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"LINE API error: {e}")
+
+    row = await asyncio.to_thread(repo.upsert_line_settings, cid, rich_menu_id="")
+    return _settings_public(row)
 
 
 @router.post("/debug/reseed-today")
