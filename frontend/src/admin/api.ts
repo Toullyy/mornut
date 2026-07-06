@@ -90,6 +90,10 @@ export interface AdminBookingCreate {
   clinic_id: string
 }
 
+export function fetchAllBookings<T>(clinicId: string): Promise<T[]> {
+  return apiFetch<T[]>(`/admin/bookings?clinic_id=${clinicId}`)
+}
+
 export function createAdminBooking(data: AdminBookingCreate): Promise<{ id: string }> {
   return apiFetch<{ id: string }>('/admin/bookings', {
     method: 'POST',

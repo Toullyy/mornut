@@ -44,6 +44,17 @@ def list_bookings(clinic_id: str, date: str) -> list[dict]:
     return [_row_to_booking(dict(r)) for r in rows]
 
 
+def list_all_bookings(clinic_id: str) -> list[dict]:
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "SELECT * FROM bookings WHERE clinic_id = %s ORDER BY date DESC, time DESC",
+                (clinic_id,),
+            )
+            rows = cur.fetchall()
+    return [_row_to_booking(dict(r)) for r in rows]
+
+
 def create_booking(
     clinic_id: str,
     date: str,

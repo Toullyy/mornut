@@ -1,5 +1,5 @@
 import asyncio
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -48,13 +48,16 @@ async def login(body: LoginRequest) -> TokenResponse:
 
 @router.get("/bookings", response_model=list[BookingOut])
 async def list_bookings(
-    date: str,
     clinic_id: str = "",
+    date: Optional[str] = None,
     _admin: AdminUser = None,
 ) -> list[BookingOut]:
-    """List all bookings for a clinic on a given date."""
+    """List bookings for a clinic. If date is omitted, returns all bookings."""
     cid = clinic_id or settings.clinic_id
-    rows = await asyncio.to_thread(repo.list_bookings, cid, date)
+    if date:
+        rows = await asyncio.to_thread(repo.list_bookings, cid, date)
+    else:
+        rows = await asyncio.to_thread(repo.list_all_bookings, cid)
     return [_to_out(r) for r in rows]
 
 

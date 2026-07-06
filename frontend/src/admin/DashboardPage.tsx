@@ -43,6 +43,7 @@ import {
   setQuota,
   type QuotaLimits,
   fetchDoctors,
+  fetchAllBookings,
   createDoctor as apiCreateDoctor,
   updateDoctor as apiUpdateDoctor,
   deleteDoctor as apiDeleteDoctor,
@@ -71,6 +72,7 @@ interface Booking {
   id: string
   patient_name: string
   phone: string
+  date: string
   time: string
   service_name: string
   coverage: Coverage
@@ -1444,26 +1446,66 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
 }
 
 function PatientsView({ bookings }: { bookings: Booking[] }) {
+  const [tab, setTab] = useState<'directory' | 'history'>('directory')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 20
+  const [allBookings, setAllBookings] = useState<Booking[]>([])
+  const [histLoading, setHistLoading] = useState(false)
 
+  useEffect(() => { setPage(1) }, [search, tab])
+
+  useEffect(() => {
+    if (tab !== 'history') return
+    setHistLoading(true)
+    fetchAllBookings<Booking>(CLINIC_ID)
+      .then(setAllBookings)
+      .catch(console.error)
+      .finally(() => setHistLoading(false))
+  }, [tab])
+
+  // ── Tab 1: unique patient directory ──────────────────────────────────────
   const uniquePatients = bookings.reduce((acc, b) => {
     if (!acc.find(p => p.phone === b.phone)) acc.push(b)
     return acc
   }, [] as Booking[])
-  const filtered = uniquePatients.filter(p => p.patient_name.includes(search) || p.phone.includes(search))
+  const filteredDir = uniquePatients.filter(
+    p => p.patient_name.includes(search) || p.phone.includes(search),
+  )
+  const paginatedDir = filteredDir.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  useEffect(() => { setPage(1) }, [search])
+  // ── Tab 2: all bookings, newest first ────────────────────────────────────
+  const filteredHist = allBookings.filter(
+    b => b.patient_name.includes(search) || b.phone.includes(search),
+  )
+  const paginatedHist = filteredHist.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const tabBtn = (id: 'directory' | 'history', label: string) => (
+    <button
+      onClick={() => setTab(id)}
+      className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors cursor-pointer ${
+        tab === id
+          ? 'bg-primary text-primary-foreground'
+          : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+      }`}
+    >
+      {label}
+    </button>
+  )
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>ข้อมูลผู้ป่วย</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">ผู้ป่วยที่ลงทะเบียนผ่าน LINE OA ทั้งหมด</p>
+      <div className="flex items-end justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>ข้อมูลผู้ป่วย</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">ผู้ป่วยที่ลงทะเบียนผ่าน LINE OA ทั้งหมด</p>
+        </div>
+        <div className="flex items-center gap-1 bg-muted/40 p-1 rounded-xl border border-border">
+          {tabBtn('directory', `รายชื่อผู้ป่วย (${uniquePatients.length})`)}
+          {tabBtn('history', `ประวัติการนัด (${bookings.length})`)}
+        </div>
       </div>
+
       <div className="bg-card border border-border rounded-xl overflow-hidden">
         <div className="p-4 border-b border-border">
           <div className="relative">
@@ -1477,37 +1519,80 @@ function PatientsView({ bookings }: { bookings: Booking[] }) {
             />
           </div>
         </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-muted/50 border-b border-border">
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">ชื่อ-นามสกุล</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">เบอร์โทร</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">สิทธิ์</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">บริการล่าสุด</th>
-            </tr>
-          </thead>
-          <tbody>
-            {paginated.map(p => (
-              <tr key={p.id} className="border-b border-border last:border-0 hover:bg-secondary/50 transition-colors cursor-pointer">
-                <td className="px-4 py-3.5">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm">
-                      {p.patient_name[0]}
-                    </div>
-                    <span className="font-medium text-foreground">{p.patient_name}</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3.5 font-mono text-sm text-muted-foreground">{p.phone}</td>
-                <td className="px-4 py-3.5"><CoverageBadge coverage={p.coverage} /></td>
-                <td className="px-4 py-3.5 text-muted-foreground text-sm">{p.service_name}</td>
-              </tr>
-            ))}
-            {filtered.length === 0 && (
-              <tr><td colSpan={4} className="text-center py-12 text-muted-foreground text-sm">ไม่พบข้อมูล</td></tr>
-            )}
-          </tbody>
-        </table>
-        <Pagination page={page} total={filtered.length} pageSize={PAGE_SIZE} onChange={setPage} />
+
+        {tab === 'directory' ? (
+          <>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-muted/50 border-b border-border">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">ชื่อ-นามสกุล</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">เบอร์โทร</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">สิทธิ์</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">บริการล่าสุด</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedDir.map(p => (
+                  <tr key={p.id} className="border-b border-border last:border-0 hover:bg-secondary/50 transition-colors">
+                    <td className="px-4 py-3.5">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm shrink-0">
+                          {p.patient_name[0]}
+                        </div>
+                        <span className="font-medium text-foreground">{p.patient_name}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3.5 font-mono text-sm text-muted-foreground">{p.phone}</td>
+                    <td className="px-4 py-3.5"><CoverageBadge coverage={p.coverage} /></td>
+                    <td className="px-4 py-3.5 text-muted-foreground text-sm">{p.service_name}</td>
+                  </tr>
+                ))}
+                {filteredDir.length === 0 && (
+                  <tr><td colSpan={4} className="text-center py-12 text-muted-foreground text-sm">ไม่พบข้อมูล</td></tr>
+                )}
+              </tbody>
+            </table>
+            <Pagination page={page} total={filteredDir.length} pageSize={PAGE_SIZE} onChange={setPage} />
+          </>
+        ) : histLoading ? (
+          <p className="text-center py-12 text-sm text-muted-foreground">กำลังโหลด...</p>
+        ) : (
+          <>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-muted/50 border-b border-border">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">วันที่</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">เวลา</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">ชื่อ-นามสกุล</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">บริการ</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">สิทธิ์</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">สถานะ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedHist.map(b => (
+                  <tr key={b.id} className="border-b border-border last:border-0 hover:bg-secondary/50 transition-colors">
+                    <td className="px-4 py-3.5 text-sm text-muted-foreground font-mono whitespace-nowrap">
+                      {new Date(b.date + 'T12:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </td>
+                    <td className="px-4 py-3.5 font-mono text-sm font-medium text-foreground">{b.time}</td>
+                    <td className="px-4 py-3.5">
+                      <p className="font-medium text-foreground">{b.patient_name}</p>
+                      <p className="text-xs text-muted-foreground font-mono mt-0.5">{b.phone}</p>
+                    </td>
+                    <td className="px-4 py-3.5 text-sm text-muted-foreground">{b.service_name}</td>
+                    <td className="px-4 py-3.5"><CoverageBadge coverage={b.coverage} /></td>
+                    <td className="px-4 py-3.5"><StatusBadge status={b.status} /></td>
+                  </tr>
+                ))}
+                {filteredHist.length === 0 && (
+                  <tr><td colSpan={6} className="text-center py-12 text-muted-foreground text-sm">ไม่พบข้อมูล</td></tr>
+                )}
+              </tbody>
+            </table>
+            <Pagination page={page} total={filteredHist.length} pageSize={PAGE_SIZE} onChange={setPage} />
+          </>
+        )}
       </div>
     </div>
   )
