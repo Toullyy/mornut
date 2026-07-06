@@ -141,7 +141,7 @@ function Pagination({
   onChange: (p: number) => void
 }) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
-  if (totalPages <= 1) return null
+  if (total === 0) return null
 
   const from = (page - 1) * pageSize + 1
   const to = Math.min(page * pageSize, total)
@@ -164,6 +164,7 @@ function Pagination({
       <span className="text-xs text-muted-foreground">
         แสดง {from}–{to} จาก {total} รายการ
       </span>
+      {totalPages > 1 && (
       <div className="flex items-center gap-1">
         <button
           onClick={() => onChange(page - 1)}
@@ -193,6 +194,7 @@ function Pagination({
           <ChevronRight size={14} />
         </button>
       </div>
+      )}
     </div>
   )
 }
