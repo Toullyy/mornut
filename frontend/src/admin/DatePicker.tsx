@@ -24,7 +24,7 @@ function toYMD(d: Date): string {
 function formatDisplay(s: string): string {
   const d = parseYMD(s)
   if (!d) return ''
-  return `${d.getDate()} ${THAI_MONTHS[d.getMonth()].slice(0, 3)} ${d.getFullYear()}`
+  return `${d.getDate()} ${THAI_MONTHS[d.getMonth()]} ${d.getFullYear()}`
 }
 
 export interface DatePickerProps {
