@@ -284,9 +284,24 @@ function ScheduleEditor({ doctor, schedule, onSlotsChange, onSave, saving, saved
   clinicOpenTime?: string
   clinicCloseTime?: string
 }) {
-  const hasInvalidSlots = Object.values(schedule).some(slots =>
-    slots.some(s => s.start && s.end && s.start >= s.end)
-  )
+  function slotsHaveIssues(slots: DaySlot[]): boolean {
+    for (let i = 0; i < slots.length; i++) {
+      const s = slots[i]
+      if (!s.start || !s.end) continue
+      if (s.start >= s.end) return true
+      if (s.start < clinicOpenTime) return true
+      if (s.end > clinicCloseTime) return true
+      // overlap with another slot in the same day
+      for (let j = 0; j < slots.length; j++) {
+        if (i === j) continue
+        const t = slots[j]
+        if (!t.start || !t.end) continue
+        if (s.start < t.end && s.end > t.start) return true
+      }
+    }
+    return false
+  }
+  const hasInvalidSlots = Object.values(schedule).some(slotsHaveIssues)
 
   const [expandedDay, setExpandedDay] = useState<number | null>(null)
   const [selectedDays, setSelectedDays] = useState<Set<number>>(new Set())
@@ -430,20 +445,32 @@ function ScheduleEditor({ doctor, schedule, onSlotsChange, onSave, saving, saved
                   </div>
                   <div className="flex flex-col gap-1.5">
                     {slots.map((slot, i) => {
-                      const invalid = Boolean(slot.start && slot.end && slot.start >= slot.end)
+                      const invalidRange = Boolean(slot.start && slot.end && slot.start >= slot.end)
+                      const outsideClinic = Boolean(
+                        (slot.start && slot.start < clinicOpenTime) ||
+                        (slot.end && slot.end > clinicCloseTime)
+                      )
+                      const overlaps = slots.some((t, j) =>
+                        j !== i && t.start && t.end && slot.start && slot.end &&
+                        slot.start < t.end && slot.end > t.start
+                      )
+                      const invalid = invalidRange || outsideClinic || overlaps
                       return (
                         <div key={i} className="flex flex-col gap-0.5">
                           <div className="flex items-center gap-2">
                             <TimePicker
                               value={slot.start}
                               onChange={v => { const next = [...slots]; next[i] = { ...slot, start: v }; onSlotsChange(dayIdx, next) }}
+                              minTime={clinicOpenTime}
+                              maxTime={clinicCloseTime}
                               invalid={invalid}
                             />
                             <span className="text-muted-foreground text-xs">–</span>
                             <TimePicker
                               value={slot.end}
                               onChange={v => { const next = [...slots]; next[i] = { ...slot, end: v }; onSlotsChange(dayIdx, next) }}
-                              minTime={slot.start || undefined}
+                              minTime={slot.start || clinicOpenTime}
+                              maxTime={clinicCloseTime}
                               invalid={invalid}
                             />
                             <button onClick={() => onSlotsChange(dayIdx, slots.filter((_, j) => j !== i))}
@@ -451,8 +478,14 @@ function ScheduleEditor({ doctor, schedule, onSlotsChange, onSave, saving, saved
                               <Trash2 size={12} />
                             </button>
                           </div>
-                          {invalid && (
-                            <p className="text-[11px] text-destructive pl-1">เวลาเริ่มต้นต้องน้อยกว่าเวลาสิ้นสุด</p>
+                          {invalidRange && (
+                            <p className="text-[11px] text-destructive pl-1">เวลาเริ่มต้องน้อยกว่าเวลาสิ้นสุด</p>
+                          )}
+                          {!invalidRange && outsideClinic && (
+                            <p className="text-[11px] text-destructive pl-1">ต้องอยู่ในเวลาทำการคลินิก ({clinicOpenTime}–{clinicCloseTime})</p>
+                          )}
+                          {!invalidRange && !outsideClinic && overlaps && (
+                            <p className="text-[11px] text-destructive pl-1">ช่วงเวลาซ้อนทับกับช่วงอื่น</p>
                           )}
                         </div>
                       )

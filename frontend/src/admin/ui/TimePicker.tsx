@@ -8,6 +8,7 @@ interface Props {
   minHour?: number       // earliest selectable hour (default 6)
   maxHour?: number       // latest selectable hour (default 22)
   minTime?: string       // "HH:MM" — no time at or before this is selectable
+  maxTime?: string       // "HH:MM" — no time after this is selectable
   invalid?: boolean      // show red border
 }
 
@@ -18,7 +19,7 @@ function parseHM(t: string): [number, number] {
   return [parseInt(h, 10), parseInt(m, 10)]
 }
 
-export function TimePicker({ value, onChange, minHour = 6, maxHour = 22, minTime, invalid }: Props) {
+export function TimePicker({ value, onChange, minHour = 6, maxHour = 22, minTime, maxTime, invalid }: Props) {
   const [open, setOpen] = useState(false)
   const btnRef = useRef<HTMLButtonElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
@@ -31,6 +32,7 @@ export function TimePicker({ value, onChange, minHour = 6, maxHour = 22, minTime
   const [draftHour, setDraftHour] = useState<number | null>(selHour)
 
   const [minH, minM] = minTime ? parseHM(minTime) : [minHour, -1]
+  const [maxH, maxM] = maxTime ? parseHM(maxTime) : [maxHour, 60]
 
   useEffect(() => {
     if (value) setDraftHour(parseInt(value.split(':')[0], 10))
@@ -64,14 +66,17 @@ export function TimePicker({ value, onChange, minHour = 6, maxHour = 22, minTime
   }, [open])
 
   function isHourDisabled(h: number): boolean {
-    return h < minH
+    return h < minH || h > maxH
   }
 
   function isMinuteDisabled(m: string): boolean {
     const activeH = draftHour ?? selHour ?? minH
-    if (activeH > minH) return false
+    const mInt = parseInt(m, 10)
     if (activeH < minH) return true
-    return parseInt(m, 10) <= minM
+    if (activeH === minH && mInt <= minM) return true
+    if (activeH > maxH) return true
+    if (activeH === maxH && mInt > maxM) return true
+    return false
   }
 
   function pickHour(h: number) {
