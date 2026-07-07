@@ -92,7 +92,7 @@ import {
 // ── Types ──────────────────────────────────────────────────────────────────
 type Coverage = 'cash' | 'sso' | 'universal'
 type Status = 'pending_slip' | 'confirmed' | 'reminded' | 'done' | 'no_show' | 'cancelled'
-type NavItem = 'dashboard' | 'appointments' | 'quota' | 'patients' | 'doctors' | 'bookingReminders' | 'chat' | 'settings'
+type NavItem = 'dashboard' | 'appointments' | 'quota' | 'patients' | 'doctors' | 'bookingReminders' | 'chat' | 'clinicSettings' | 'settings'
 
 interface Booking {
   id: string
@@ -2710,6 +2710,21 @@ function ServicesSection() {
   )
 }
 
+function ClinicSettingsView() {
+  return (
+    <div className="flex flex-col gap-5">
+      <div>
+        <h1 className="text-xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>ตั้งค่าคลินิก</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">ข้อมูลคลินิกและบริการที่เปิดให้บริการ</p>
+      </div>
+
+      <ClinicInfoSection />
+
+      <ServicesSection />
+    </div>
+  )
+}
+
 function SettingsView() {
   const [ssoEnabled, setSsoEnabled] = useState(true)
   const [ssoDepositRequired, setSsoDepositRequired] = useState(true)
@@ -2731,10 +2746,6 @@ function SettingsView() {
         <h1 className="text-xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>ตั้งค่าระบบ</h1>
         <p className="text-sm text-muted-foreground mt-0.5">จัดการสิทธิ์การรักษา, มัดจำ และการแจ้งเตือน</p>
       </div>
-
-      <ClinicInfoSection />
-
-      <ServicesSection />
 
       <LineOAConnectSection />
 
@@ -2875,7 +2886,8 @@ export default function DashboardPage() {
     { id: 'patients', label: 'ผู้ป่วย', icon: <Users size={16} /> },
     { id: 'bookingReminders', label: 'แจ้งเตือนนัดหมาย', icon: <ClipboardList size={16} /> },
     { id: 'chat', label: 'แชท', icon: <MessageCircle size={16} /> },
-    { id: 'settings', label: 'ตั้งค่า', icon: <ShieldCheck size={16} /> },
+    { id: 'clinicSettings', label: 'ตั้งค่าคลินิก', icon: <MapPin size={16} /> },
+    { id: 'settings', label: 'ตั้งค่าระบบ', icon: <ShieldCheck size={16} /> },
   ]
 
   return (
@@ -3005,6 +3017,7 @@ export default function DashboardPage() {
           )}
           {activeNav === 'bookingReminders' && <BookingRemindersView clinicId={CLINIC_ID} />}
           {activeNav === 'chat' && <ChatView clinicId={CLINIC_ID} />}
+          {activeNav === 'clinicSettings' && <ClinicSettingsView />}
           {activeNav === 'settings' && <SettingsView />}
         </div>
       </main>
