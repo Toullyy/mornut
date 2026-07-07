@@ -88,6 +88,16 @@ CREATE TABLE IF NOT EXISTS doctor_shifts (
     UNIQUE (doctor_id, day_of_week)
 );
 
+-- Per-clinic display info (one row per clinic). Populated from the admin
+-- Settings page ("อื่นๆ").
+CREATE TABLE IF NOT EXISTS clinic_settings (
+    clinic_id  TEXT PRIMARY KEY,
+    name       TEXT NOT NULL DEFAULT '',
+    address    TEXT NOT NULL DEFAULT '',
+    phone      TEXT NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Per-clinic LINE Official Account connection settings (one row per clinic).
 -- Populated from the admin Settings page ("เชื่อมต่อ LINE OA").
 CREATE TABLE IF NOT EXISTS line_settings (

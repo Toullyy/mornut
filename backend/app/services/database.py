@@ -282,6 +282,39 @@ def get_services(clinic_id: str) -> list[dict]:
             return [dict(r) for r in cur.fetchall()]
 
 
+def create_service(clinic_id: str, name: str, duration_min: int, deposit_amount: float) -> str:
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "INSERT INTO services (clinic_id, name, duration_min, deposit_amount) "
+                "VALUES (%s, %s, %s, %s) RETURNING id::text",
+                (clinic_id, name, duration_min, deposit_amount),
+            )
+            row = cur.fetchone()
+    return row["id"]
+
+
+def update_service(service_id: str, data: dict) -> None:
+    allowed = {"name", "duration_min", "deposit_amount"}
+    fields = {k: v for k, v in data.items() if k in allowed}
+    if not fields:
+        return
+    set_clause = ", ".join(f"{k} = %s" for k in fields)
+    values = list(fields.values()) + [service_id]
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                f"UPDATE services SET {set_clause} WHERE id::text = %s",
+                values,
+            )
+
+
+def delete_service(service_id: str) -> None:
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute("DELETE FROM services WHERE id::text = %s", (service_id,))
+
+
 # ── Admin users ───────────────────────────────────────────────────────────────
 
 def get_admin_by_email(email: str) -> Optional[dict]:
@@ -492,6 +525,17 @@ def ensure_schema() -> None:
         with cursor(conn) as cur:
             cur.execute(
                 """
+                CREATE TABLE IF NOT EXISTS clinic_settings (
+                    clinic_id  TEXT PRIMARY KEY,
+                    name       TEXT NOT NULL DEFAULT '',
+                    address    TEXT NOT NULL DEFAULT '',
+                    phone      TEXT NOT NULL DEFAULT '',
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS line_settings (
                     clinic_id            TEXT PRIMARY KEY,
                     channel_secret       TEXT NOT NULL DEFAULT '',
@@ -566,6 +610,43 @@ def ensure_schema() -> None:
                 "CREATE INDEX IF NOT EXISTS idx_booking_reminders_clinic "
                 "ON booking_reminders(clinic_id, next_reminder_date)"
             )
+
+
+# ── Clinic settings ───────────────────────────────────────────────────────────
+
+# Columns clients are allowed to upsert (clinic_id is the key, updated_at is set automatically).
+_CLINIC_SETTINGS_FIELDS = ("name", "address", "phone")
+
+
+def get_clinic_settings(clinic_id: str) -> Optional[dict]:
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute("SELECT * FROM clinic_settings WHERE clinic_id = %s", (clinic_id,))
+            row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def upsert_clinic_settings(clinic_id: str, **fields) -> dict:
+    """Insert or update a clinic's display info. Only known columns are written."""
+    cols = [f for f in fields if f in _CLINIC_SETTINGS_FIELDS]
+    values = [fields[c] for c in cols]
+
+    insert_cols = ["clinic_id", *cols]
+    placeholders = ", ".join(["%s"] * len(insert_cols))
+    updates = ", ".join(f"{c} = EXCLUDED.{c}" for c in cols)
+    update_clause = f"{updates}, updated_at = NOW()" if updates else "updated_at = NOW()"
+
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                f"INSERT INTO clinic_settings ({', '.join(insert_cols)}) "
+                f"VALUES ({placeholders}) "
+                f"ON CONFLICT (clinic_id) DO UPDATE SET {update_clause} "
+                f"RETURNING *",
+                [clinic_id, *values],
+            )
+            row = cur.fetchone()
+    return dict(row)
 
 
 def get_line_settings(clinic_id: str) -> Optional[dict]:

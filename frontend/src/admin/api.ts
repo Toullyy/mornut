@@ -123,6 +123,59 @@ export function fetchSlots(clinicId: string, date: string): Promise<SlotItem[]> 
   return apiFetch<SlotItem[]>(`/clinics/${clinicId}/slots/${date}`)
 }
 
+// ── Admin services (manage) ──────────────────────────────────────────────────
+
+export interface ServiceCreate {
+  name: string
+  duration_min: number
+  deposit_amount: number
+}
+
+export function fetchAdminServices(clinicId: string): Promise<ServiceItem[]> {
+  return apiFetch<ServiceItem[]>(`/admin/services?clinic_id=${clinicId}`)
+}
+
+export function createService(clinicId: string, data: ServiceCreate): Promise<ServiceItem> {
+  return apiFetch<ServiceItem>(`/admin/services?clinic_id=${clinicId}`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export function updateService(serviceId: string, data: Partial<ServiceCreate>): Promise<void> {
+  return apiFetch<void>(`/admin/services/${serviceId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+}
+
+export function deleteService(serviceId: string): Promise<void> {
+  return apiFetch<void>(`/admin/services/${serviceId}`, { method: 'DELETE' })
+}
+
+// ── Clinic settings ───────────────────────────────────────────────────────────
+
+export interface ClinicSettings {
+  clinic_id: string
+  name: string
+  address: string
+  phone: string
+}
+
+export function getClinicSettings(clinicId: string): Promise<ClinicSettings> {
+  return apiFetch<ClinicSettings>(`/admin/clinic-settings?clinic_id=${clinicId}`)
+}
+
+export function updateClinicSettings(
+  clinicId: string,
+  data: Partial<Omit<ClinicSettings, 'clinic_id'>>,
+): Promise<ClinicSettings> {
+  return apiFetch<ClinicSettings>(`/admin/clinic-settings?clinic_id=${clinicId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  })
+}
+
 // ── Appointments (multi-day) ─────────────────────────────────────────────────
 
 export interface AppointmentBooking {

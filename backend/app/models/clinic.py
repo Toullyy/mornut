@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import BaseModel, computed_field
 
 
@@ -32,6 +34,31 @@ class ServiceOut(BaseModel):
     name: str
     duration_min: int
     deposit_amount: float
+
+
+class ServiceCreate(BaseModel):
+    name: str
+    duration_min: int = 30
+    deposit_amount: float = 0
+
+
+class ServiceUpdate(BaseModel):
+    name: Optional[str] = None
+    duration_min: Optional[int] = None
+    deposit_amount: Optional[float] = None
+
+
+class ClinicSettingsOut(BaseModel):
+    clinic_id: str
+    name: str
+    address: str
+    phone: str
+
+
+class ClinicSettingsUpdate(BaseModel):
+    name: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
 
 
 class AvailableSlot(BaseModel):

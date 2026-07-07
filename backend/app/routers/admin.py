@@ -12,6 +12,13 @@ from app.core.security import (
 )
 from app.core.db import cursor, get_conn  # used by debug/db endpoint
 from app.models.booking import BookingOut
+from app.models.clinic import (
+    ClinicSettingsOut,
+    ClinicSettingsUpdate,
+    ServiceCreate,
+    ServiceOut,
+    ServiceUpdate,
+)
 from app.services import database as repo
 from app.services.booking_service import _to_out
 from app.services import line as line_service
@@ -140,6 +147,65 @@ async def dev_connect(body: LineOAConnect) -> dict:
             "markAsReadMode": "auto",
         },
     }
+
+
+# ── Clinic settings ──────────────────────────────────────────────────────────
+
+@router.get("/clinic-settings", response_model=ClinicSettingsOut)
+async def get_clinic_settings(clinic_id: str = "", _admin: AdminUser = None) -> ClinicSettingsOut:
+    cid = clinic_id or settings.clinic_id
+    row = await asyncio.to_thread(repo.get_clinic_settings, cid)
+    return ClinicSettingsOut(clinic_id=cid, name=row["name"] if row else "",
+                              address=row["address"] if row else "", phone=row["phone"] if row else "")
+
+
+@router.put("/clinic-settings", response_model=ClinicSettingsOut)
+async def update_clinic_settings(
+    body: ClinicSettingsUpdate,
+    clinic_id: str = "",
+    _admin: AdminUser = None,
+) -> ClinicSettingsOut:
+    cid = clinic_id or settings.clinic_id
+    row = await asyncio.to_thread(
+        repo.upsert_clinic_settings, cid, **body.model_dump(exclude_none=True)
+    )
+    return ClinicSettingsOut(clinic_id=cid, name=row["name"], address=row["address"], phone=row["phone"])
+
+
+# ── Services ──────────────────────────────────────────────────────────────────
+
+@router.get("/services", response_model=list[ServiceOut])
+async def list_services(clinic_id: str = "", _admin: AdminUser = None) -> list[ServiceOut]:
+    cid = clinic_id or settings.clinic_id
+    return await asyncio.to_thread(repo.get_services, cid)
+
+
+@router.post("/services", response_model=ServiceOut, status_code=201)
+async def create_service(
+    body: ServiceCreate,
+    clinic_id: str = "",
+    _admin: AdminUser = None,
+) -> ServiceOut:
+    cid = clinic_id or settings.clinic_id
+    service_id = await asyncio.to_thread(
+        repo.create_service, cid, body.name, body.duration_min, body.deposit_amount
+    )
+    return ServiceOut(id=service_id, name=body.name, duration_min=body.duration_min,
+                       deposit_amount=body.deposit_amount)
+
+
+@router.patch("/services/{service_id}", status_code=204)
+async def update_service(
+    service_id: str,
+    body: ServiceUpdate,
+    _admin: AdminUser = None,
+) -> None:
+    await asyncio.to_thread(repo.update_service, service_id, body.model_dump(exclude_none=True))
+
+
+@router.delete("/services/{service_id}", status_code=204)
+async def delete_service(service_id: str, _admin: AdminUser = None) -> None:
+    await asyncio.to_thread(repo.delete_service, service_id)
 
 
 # ── LINE OA settings (connect / webhook / rich menu) ────────────────────────────

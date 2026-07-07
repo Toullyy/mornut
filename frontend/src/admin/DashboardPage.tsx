@@ -37,6 +37,8 @@ import {
   ChevronRight,
   ClipboardList,
   Pencil,
+  MapPin,
+  Package,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { apiFetch } from '../lib/api'
@@ -69,9 +71,16 @@ import {
   fetchLinePatients,
   createBookingReminder,
   updateBookingReminder,
+  getClinicSettings,
+  updateClinicSettings,
+  fetchAdminServices,
+  createService,
+  updateService,
+  deleteService,
   type Doctor as ApiDoctor,
   type DoctorCreate,
   type ServiceItem,
+  type ServiceCreate,
   type SlotItem,
   type LineOASettings,
   type ChatMessage,
@@ -280,24 +289,29 @@ function SettingsRow({ label, hint, children }: { label: string; hint?: string; 
 function AddQueueModal({
   date: initialDate,
   clinicId,
+  prefill,
   onClose,
   onCreated,
 }: {
   date: string
   clinicId: string
+  prefill?: { patient_name: string; phone: string }
   onClose: () => void
   onCreated: () => void
 }) {
-  const [form, setForm] = useState({
-    first_name: '',
-    last_name: '',
-    phone: '',
-    date: initialDate,
-    time: '',
-    service_id: '',
-    service_name: '',
-    coverage: 'cash' as Coverage,
-    deposit_amount: 0,
+  const [form, setForm] = useState(() => {
+    const [first_name = '', ...rest] = prefill?.patient_name.trim().split(/\s+/) ?? []
+    return {
+      first_name,
+      last_name: rest.join(' '),
+      phone: prefill?.phone ?? '',
+      date: initialDate,
+      time: '',
+      service_id: '',
+      service_name: '',
+      coverage: 'cash' as Coverage,
+      deposit_amount: 0,
+    }
   })
   const [services, setServices] = useState<ServiceItem[]>([])
   const [slots, setSlots] = useState<SlotItem[]>([])
@@ -1464,7 +1478,10 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
   )
 }
 
-function PatientsView({ bookings }: { bookings: Booking[] }) {
+function PatientsView({ bookings, onBookPatient }: {
+  bookings: Booking[]
+  onBookPatient: (patient: { patient_name: string; phone: string }) => void
+}) {
   const [tab, setTab] = useState<'directory' | 'history'>('directory')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -1552,7 +1569,11 @@ function PatientsView({ bookings }: { bookings: Booking[] }) {
               </thead>
               <tbody>
                 {paginatedDir.map(p => (
-                  <tr key={p.id} className="border-b border-border last:border-0 hover:bg-secondary/50 transition-colors">
+                  <tr
+                    key={p.id}
+                    onClick={() => onBookPatient({ patient_name: p.patient_name, phone: p.phone })}
+                    className="border-b border-border last:border-0 hover:bg-secondary/50 transition-colors cursor-pointer"
+                  >
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm shrink-0">
@@ -1590,7 +1611,11 @@ function PatientsView({ bookings }: { bookings: Booking[] }) {
               </thead>
               <tbody>
                 {paginatedHist.map(b => (
-                  <tr key={b.id} className="border-b border-border last:border-0 hover:bg-secondary/50 transition-colors">
+                  <tr
+                    key={b.id}
+                    onClick={() => onBookPatient({ patient_name: b.patient_name, phone: b.phone })}
+                    className="border-b border-border last:border-0 hover:bg-secondary/50 transition-colors cursor-pointer"
+                  >
                     <td className="px-4 py-3.5 text-sm text-muted-foreground font-mono whitespace-nowrap">
                       {new Date(b.date + 'T12:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </td>
@@ -2385,6 +2410,306 @@ function ChatView({ clinicId }: { clinicId: string }) {
   )
 }
 
+function ClinicInfoSection() {
+  const fieldFull =
+    'w-full text-sm bg-input-background border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring/30'
+  const [name, setName] = useState('')
+  const [address, setAddress] = useState('')
+  const [phone, setPhone] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  useEffect(() => {
+    getClinicSettings(CLINIC_ID)
+      .then(s => {
+        setName(s.name)
+        setAddress(s.address)
+        setPhone(s.phone)
+      })
+      .catch(e => setError((e as Error).message))
+      .finally(() => setLoading(false))
+  }, [])
+
+  async function handleSave() {
+    setSaving(true)
+    setError('')
+    setNotice('')
+    try {
+      await updateClinicSettings(CLINIC_ID, { name, address, phone })
+      setNotice('บันทึกแล้ว')
+    } catch (e) {
+      setError((e as Error).message || 'เกิดข้อผิดพลาด')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <SettingsSection title="ข้อมูลคลินิก" icon={<MapPin size={16} />}>
+      <div className="pt-2 flex flex-col gap-4">
+        {loading ? (
+          <p className="text-sm text-muted-foreground">กำลังโหลด...</p>
+        ) : (
+          <>
+            <div>
+              <label className="block text-xs font-semibold text-muted-foreground mb-1.5">ชื่อคลินิก</label>
+              <input type="text" value={name} onChange={e => setName(e.target.value)} className={fieldFull} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-muted-foreground mb-1.5">ที่อยู่</label>
+              <textarea value={address} onChange={e => setAddress(e.target.value)} rows={2} className={fieldFull} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-muted-foreground mb-1.5">เบอร์โทรคลินิก</label>
+              <input type="text" value={phone} onChange={e => setPhone(e.target.value)} className={`${fieldFull} font-mono`} />
+            </div>
+            <div>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex items-center gap-2 bg-primary text-primary-foreground font-medium px-4 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors text-sm cursor-pointer"
+              >
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                บันทึก
+              </button>
+            </div>
+            {error && (
+              <p className="text-sm text-destructive flex items-center gap-1.5"><AlertCircle size={14} />{error}</p>
+            )}
+            {notice && !error && <p className="text-sm text-primary">{notice}</p>}
+          </>
+        )}
+      </div>
+    </SettingsSection>
+  )
+}
+
+function AddEditServiceModal({
+  service,
+  onClose,
+  onSaved,
+}: {
+  service?: ServiceItem
+  onClose: () => void
+  onSaved: (service: ServiceItem) => void
+}) {
+  const [form, setForm] = useState<ServiceCreate>({
+    name: service?.name ?? '',
+    duration_min: service?.duration_min ?? 30,
+    deposit_amount: service?.deposit_amount ?? 0,
+  })
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+
+  const isValid = form.name.trim().length > 0 && form.duration_min > 0
+
+  const handleSubmit = async () => {
+    if (!isValid) return
+    setSubmitting(true)
+    setError('')
+    try {
+      if (service) {
+        await updateService(service.id, form)
+        onSaved({ ...service, ...form })
+      } else {
+        const created = await createService(CLINIC_ID, form)
+        onSaved(created)
+      }
+    } catch (e) {
+      setError((e as Error).message)
+      setSubmitting(false)
+    }
+  }
+
+  const field = 'w-full text-sm bg-input-background border border-border rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-ring/30'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-card border border-border rounded-2xl shadow-xl w-full max-w-md mx-4">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+          <h2 className="font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+            {service ? 'แก้ไขบริการ' : 'เพิ่มบริการใหม่'}
+          </h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground cursor-pointer">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-muted-foreground">ชื่อบริการ <span className="text-destructive">*</span></label>
+            <input
+              type="text"
+              placeholder="เช่น ตรวจสุขภาพทั่วไป"
+              value={form.name}
+              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              className={field}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">ระยะเวลา (นาที) <span className="text-destructive">*</span></label>
+              <input
+                type="number"
+                min={5}
+                value={form.duration_min}
+                onChange={e => setForm(f => ({ ...f, duration_min: Number(e.target.value) }))}
+                className={`${field} font-mono`}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">มัดจำ (บาท)</label>
+              <input
+                type="number"
+                min={0}
+                value={form.deposit_amount}
+                onChange={e => setForm(f => ({ ...f, deposit_amount: Number(e.target.value) }))}
+                className={`${field} font-mono`}
+              />
+            </div>
+          </div>
+          {error && (
+            <p className="text-sm text-destructive flex items-center gap-1.5"><AlertCircle size={14} />{error}</p>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-border">
+          <button onClick={onClose} className="text-sm text-muted-foreground hover:text-foreground px-4 py-2 rounded-lg hover:bg-muted transition-colors cursor-pointer">
+            ยกเลิก
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!isValid || submitting}
+            className="flex items-center gap-2 bg-primary text-primary-foreground font-medium px-4 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors text-sm cursor-pointer"
+          >
+            {submitting ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            บันทึก
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ServicesSection() {
+  const [services, setServices] = useState<ServiceItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showAdd, setShowAdd] = useState(false)
+  const [editingService, setEditingService] = useState<ServiceItem | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+
+  const loadServices = useCallback(() => {
+    setLoading(true)
+    fetchAdminServices(CLINIC_ID)
+      .then(setServices)
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => { loadServices() }, [loadServices])
+
+  const handleDelete = async (serviceId: string) => {
+    try {
+      await deleteService(serviceId)
+      setServices(prev => prev.filter(s => s.id !== serviceId))
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setConfirmDelete(null)
+    }
+  }
+
+  return (
+    <SettingsSection title="บริการ" icon={<Package size={16} />}>
+      {showAdd && (
+        <AddEditServiceModal
+          onClose={() => setShowAdd(false)}
+          onSaved={created => { setServices(prev => [...prev, created]); setShowAdd(false) }}
+        />
+      )}
+      {editingService && (
+        <AddEditServiceModal
+          service={editingService}
+          onClose={() => setEditingService(null)}
+          onSaved={updated => {
+            setServices(prev => prev.map(s => s.id === updated.id ? updated : s))
+            setEditingService(null)
+          }}
+        />
+      )}
+
+      <div className="pt-2 flex flex-col gap-3">
+        <div className="flex justify-end">
+          <button
+            onClick={() => setShowAdd(true)}
+            className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-3.5 py-2 rounded-lg hover:bg-primary/90 transition-colors cursor-pointer"
+          >
+            <Plus size={14} />เพิ่มบริการ
+          </button>
+        </div>
+
+        {loading ? (
+          <p className="text-sm text-muted-foreground py-6 text-center">กำลังโหลด...</p>
+        ) : services.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-6 text-center">ยังไม่มีบริการ กดปุ่ม "เพิ่มบริการ" เพื่อเริ่มต้น</p>
+        ) : (
+          services.map(s => (
+            <div
+              key={s.id}
+              className="flex items-center justify-between gap-3 border border-border rounded-lg px-4 py-3"
+            >
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground truncate">{s.name}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {s.duration_min} นาที · มัดจำ ฿{s.deposit_amount.toLocaleString()}
+                </p>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                {confirmDelete === s.id ? (
+                  <>
+                    <span className="text-xs text-muted-foreground mr-1">ลบบริการนี้?</span>
+                    <button
+                      onClick={() => handleDelete(s.id)}
+                      className="text-xs font-medium text-destructive hover:bg-destructive/10 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer"
+                    >
+                      ยืนยัน
+                    </button>
+                    <button
+                      onClick={() => setConfirmDelete(null)}
+                      className="text-xs text-muted-foreground hover:bg-muted px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer"
+                    >
+                      ยกเลิก
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => setEditingService(s)}
+                      className="p-1.5 text-muted-foreground hover:text-primary hover:bg-muted rounded-lg transition-colors cursor-pointer"
+                      title="แก้ไข"
+                    >
+                      <Pencil size={13} />
+                    </button>
+                    <button
+                      onClick={() => setConfirmDelete(s.id)}
+                      className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-muted rounded-lg transition-colors cursor-pointer"
+                      title="ลบ"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </SettingsSection>
+  )
+}
+
 function SettingsView() {
   const [ssoEnabled, setSsoEnabled] = useState(true)
   const [ssoDepositRequired, setSsoDepositRequired] = useState(true)
@@ -2399,8 +2724,6 @@ function SettingsView() {
   const [reminderTime, setReminderTime] = useState('18:00')
   const [reminderDaysBefore, setReminderDaysBefore] = useState('1')
   const [cancelTtl, setCancelTtl] = useState('15')
-  const [clinicName, setClinicName] = useState('คลินิกสุขภาพดี')
-  const [clinicPhone, setClinicPhone] = useState('02-123-4567')
 
   return (
     <div className="flex flex-col gap-5">
@@ -2408,6 +2731,10 @@ function SettingsView() {
         <h1 className="text-xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>ตั้งค่าระบบ</h1>
         <p className="text-sm text-muted-foreground mt-0.5">จัดการสิทธิ์การรักษา, มัดจำ และการแจ้งเตือน</p>
       </div>
+
+      <ClinicInfoSection />
+
+      <ServicesSection />
 
       <LineOAConnectSection />
 
@@ -2473,14 +2800,6 @@ function SettingsView() {
 
       <SettingsSection title="อื่นๆ" icon={<Settings2 size={16} />}>
         <div className="pt-2">
-          <SettingsRow label="ชื่อคลินิก">
-            <input type="text" value={clinicName} onChange={e => setClinicName(e.target.value)}
-              className="text-sm bg-input-background border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-ring/30 w-52" />
-          </SettingsRow>
-          <SettingsRow label="เบอร์โทรคลินิก">
-            <input type="text" value={clinicPhone} onChange={e => setClinicPhone(e.target.value)}
-              className="text-sm font-mono bg-input-background border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-ring/30 w-36" />
-          </SettingsRow>
           <SettingsRow label="แจ้งเตือนผู้ป่วยล่วงหน้า" hint="ส่ง LINE ข้อความเตือนก่อนวันนัด">
             <Toggle checked={reminderEnabled} onChange={setReminderEnabled} />
           </SettingsRow>
@@ -2525,7 +2844,7 @@ export default function DashboardPage() {
   const [activeNav, setActiveNav] = useState<NavItem>('dashboard')
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [actionLoading, setActionLoading] = useState<string | null>(null)
-  const [showAddQueue, setShowAddQueue] = useState(false)
+  const [addQueueModal, setAddQueueModal] = useState<{ prefill?: { patient_name: string; phone: string } } | null>(null)
 
   const constraints = useMemo(() => ({ date, clinicId: CLINIC_ID }), [date])
 
@@ -2562,12 +2881,13 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-background flex" style={{ fontFamily: "'DM Sans', sans-serif" }}>
       {/* Add Queue Modal */}
-      {showAddQueue && (
+      {addQueueModal && (
         <AddQueueModal
           date={date}
           clinicId={CLINIC_ID}
-          onClose={() => setShowAddQueue(false)}
-          onCreated={() => { setShowAddQueue(false); refetch() }}
+          prefill={addQueueModal.prefill}
+          onClose={() => setAddQueueModal(null)}
+          onCreated={() => { setAddQueueModal(null); refetch() }}
         />
       )}
 
@@ -2670,14 +2990,19 @@ export default function DashboardPage() {
               actionLoading={actionLoading}
               date={date}
               onDateChange={setDate}
-              onAddQueue={() => setShowAddQueue(true)}
+              onAddQueue={() => setAddQueueModal({})}
               onRefresh={refetch}
             />
           )}
           {activeNav === 'appointments' && <AppointmentsView clinicId={CLINIC_ID} />}
           {activeNav === 'doctors' && <DoctorsView clinicId={CLINIC_ID} />}
           {activeNav === 'quota' && <QuotaView date={date} />}
-          {activeNav === 'patients' && <PatientsView bookings={bookings} />}
+          {activeNav === 'patients' && (
+            <PatientsView
+              bookings={bookings}
+              onBookPatient={patient => setAddQueueModal({ prefill: patient })}
+            />
+          )}
           {activeNav === 'bookingReminders' && <BookingRemindersView clinicId={CLINIC_ID} />}
           {activeNav === 'chat' && <ChatView clinicId={CLINIC_ID} />}
           {activeNav === 'settings' && <SettingsView />}
