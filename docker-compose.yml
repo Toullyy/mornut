@@ -14,6 +14,52 @@ services:
     volumes:
       - mornut_pgdata:/var/lib/postgresql/data
       - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mornut"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build: ./backend
+    container_name: mornut_backend
+    restart: unless-stopped
+    environment:
+      # Container-to-container hostname (db:5432), overrides whatever host-mapped
+      # value is in backend/.env (used for non-Docker dev on this machine).
+      DATABASE_URL: postgresql://mornut:mornut@db:5432/mornut
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health')\" || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  frontend:
+    build: ./frontend
+    container_name: mornut_frontend
+    restart: unless-stopped
+    environment:
+      # Vite dev-server proxy runs inside this container, so it must reach the
+      # backend by its service name, not localhost.
+      VITE_API_PROXY_TARGET: http://backend:8080
+    ports:
+      # Host 5173 is taken by another project's container on this machine,
+      # so map to 5175 instead (already allow-listed in backend's ALLOWED_ORIGINS).
+      - "5175:5173"
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
 
 volumes:
   mornut_pgdata:

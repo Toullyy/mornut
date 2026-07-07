@@ -112,6 +112,31 @@ export function fetchSlots(clinicId: string, date: string): Promise<SlotItem[]> 
   return apiFetch<SlotItem[]>(`/clinics/${clinicId}/slots/${date}`)
 }
 
+// ── Appointments (multi-day) ─────────────────────────────────────────────────
+
+export interface AppointmentBooking {
+  id: string
+  patient_name: string
+  phone: string
+  date: string
+  time: string
+  service_name: string
+  coverage: 'cash' | 'sso' | 'universal'
+  status: 'pending_slip' | 'confirmed' | 'reminded' | 'done' | 'no_show' | 'cancelled'
+  deposit_amount: number
+  clinic_id: string
+}
+
+export function fetchAppointmentsRange(
+  clinicId: string,
+  start: string,
+  end: string,
+): Promise<AppointmentBooking[]> {
+  return apiFetch<AppointmentBooking[]>(
+    `/admin/bookings/range?clinic_id=${clinicId}&start=${start}&end=${end}`,
+  )
+}
+
 // ── LINE OA settings ────────────────────────────────────────────────────────────
 
 export interface LineOABot {
@@ -166,5 +191,119 @@ export function setupRichMenu(clinicId: string): Promise<LineOASettings> {
 export function deleteRichMenu(clinicId: string): Promise<LineOASettings> {
   return apiFetch<LineOASettings>(`/admin/line-oa/rich-menu?clinic_id=${clinicId}`, {
     method: 'DELETE',
+  })
+}
+
+// ── Chat (AI / admin-override) ─────────────────────────────────────────────────
+
+export interface ChatConversation {
+  line_user_id: string
+  display_name: string
+  picture_url: string
+  mode: 'ai' | 'admin'
+  status: 'open' | 'resolved'
+  needs_attention: boolean
+  last_message_at: string
+  last_message_preview: string
+  unread_count: number
+}
+
+export interface ChatMessage {
+  id: string
+  direction: 'in' | 'out'
+  sender: 'patient' | 'ai' | 'admin'
+  text: string
+  created_at: string
+}
+
+export function fetchChatConversations(clinicId: string): Promise<ChatConversation[]> {
+  return apiFetch<ChatConversation[]>(`/admin/chat/conversations?clinic_id=${clinicId}`)
+}
+
+export function fetchChatMessages(lineUserId: string): Promise<ChatMessage[]> {
+  return apiFetch<ChatMessage[]>(`/admin/chat/conversations/${lineUserId}/messages`)
+}
+
+export function sendChatMessage(lineUserId: string, text: string): Promise<ChatConversation> {
+  return apiFetch<ChatConversation>(`/admin/chat/conversations/${lineUserId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+  })
+}
+
+export function resolveChat(lineUserId: string): Promise<ChatConversation> {
+  return apiFetch<ChatConversation>(`/admin/chat/conversations/${lineUserId}/resolve`, {
+    method: 'POST',
+  })
+}
+
+export function setChatMode(lineUserId: string, mode: 'ai' | 'admin'): Promise<ChatConversation> {
+  return apiFetch<ChatConversation>(`/admin/chat/conversations/${lineUserId}/mode`, {
+    method: 'POST',
+    body: JSON.stringify({ mode }),
+  })
+}
+
+// ── Booking reminders (recurring LINE "come back for a checkup" nudges) ────────
+// Deliberately no clinical/treatment fields — just enough to identify who to
+// remind and when. The patient books their own follow-up via the LINE bot.
+
+export interface BookingReminder {
+  id: string
+  clinic_id: string
+  patient_line_id: string
+  patient_name: string
+  patient_phone: string
+  interval_days: number
+  next_reminder_date: string
+  status: 'active' | 'stopped'
+  last_reminded_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface LinePatient {
+  patient_line_id: string
+  patient_name: string
+  phone: string
+}
+
+export interface BookingReminderCreate {
+  patient_line_id: string
+  patient_name: string
+  patient_phone?: string
+  interval_days: number
+  start_date: string
+  clinic_id?: string
+}
+
+export interface BookingReminderUpdate {
+  interval_days?: number
+  next_reminder_date?: string
+  status?: 'active' | 'stopped'
+}
+
+export function fetchBookingReminders(clinicId: string): Promise<BookingReminder[]> {
+  return apiFetch<BookingReminder[]>(`/admin/booking-reminders?clinic_id=${clinicId}`)
+}
+
+export function fetchLinePatients(clinicId: string): Promise<LinePatient[]> {
+  return apiFetch<LinePatient[]>(`/admin/booking-reminders/patients?clinic_id=${clinicId}`)
+}
+
+export function createBookingReminder(data: BookingReminderCreate): Promise<BookingReminder> {
+  return apiFetch<BookingReminder>('/admin/booking-reminders', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export function updateBookingReminder(
+  reminderId: string,
+  data: BookingReminderUpdate,
+): Promise<BookingReminder> {
+  return apiFetch<BookingReminder>(`/admin/booking-reminders/${reminderId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
   })
 }

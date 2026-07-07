@@ -102,3 +102,56 @@ CREATE TABLE IF NOT EXISTS line_settings (
     rich_menu_id         TEXT NOT NULL DEFAULT '',
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- One row per LINE user who has ever messaged the OA. Tracks whether AI or
+-- an admin is currently answering, and whether the thread is resolved.
+CREATE TABLE IF NOT EXISTS chat_conversations (
+    line_user_id        TEXT PRIMARY KEY,
+    clinic_id           TEXT NOT NULL,
+    display_name        TEXT NOT NULL DEFAULT '',
+    picture_url         TEXT NOT NULL DEFAULT '',
+    mode                TEXT NOT NULL DEFAULT 'ai' CHECK (mode IN ('ai', 'admin')),
+    status              TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
+    needs_attention     BOOLEAN NOT NULL DEFAULT FALSE,
+    last_admin_reply_at TIMESTAMPTZ,
+    last_message_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_message_preview TEXT NOT NULL DEFAULT '',
+    unread_count        INTEGER NOT NULL DEFAULT 0,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_conversations_clinic ON chat_conversations(clinic_id, last_message_at DESC);
+
+-- Full log of every inbound/outbound LINE chat message, for the admin inbox
+-- and to give the AI conversation history.
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id           UUID PRIMARY KEY,
+    line_user_id TEXT NOT NULL REFERENCES chat_conversations(line_user_id) ON DELETE CASCADE,
+    direction    TEXT NOT NULL CHECK (direction IN ('in', 'out')),
+    sender       TEXT NOT NULL CHECK (sender IN ('patient', 'ai', 'admin')),
+    text         TEXT NOT NULL,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation ON chat_messages(line_user_id, created_at);
+
+-- Recurring "come back for a checkup" LINE reminders. No clinical/treatment
+-- data on purpose (avoids PDPA sensitive-data handling) — just enough to
+-- identify who to push a LINE nudge to and when. The patient books their own
+-- follow-up via the existing LINE bot flow after receiving the nudge.
+CREATE TABLE IF NOT EXISTS booking_reminders (
+    id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    clinic_id          TEXT NOT NULL,
+    patient_line_id    TEXT NOT NULL,
+    patient_name       TEXT NOT NULL,
+    patient_phone      TEXT NOT NULL DEFAULT '',
+    interval_days      INTEGER NOT NULL CHECK (interval_days > 0),
+    next_reminder_date DATE NOT NULL,
+    status             TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'stopped')),
+    last_reminded_at   TIMESTAMPTZ,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_booking_reminders_clinic ON booking_reminders(clinic_id, next_reminder_date);

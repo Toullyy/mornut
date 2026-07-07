@@ -58,6 +58,20 @@ async def list_bookings(
     return [_to_out(r) for r in rows]
 
 
+@router.get("/bookings/range", response_model=list[BookingOut])
+async def list_bookings_range(
+    start: str,
+    end: str,
+    clinic_id: str = "",
+    _admin: AdminUser = None,
+) -> list[BookingOut]:
+    """List all bookings for a clinic across a date range (inclusive), for the
+    Appointments view's multi-day browse — as opposed to /bookings' single day."""
+    cid = clinic_id or settings.clinic_id
+    rows = await asyncio.to_thread(repo.list_bookings_range, cid, start, end)
+    return [_to_out(r) for r in rows]
+
+
 class StatusUpdate(BaseModel):
     status: Literal["done", "cancelled"]
 

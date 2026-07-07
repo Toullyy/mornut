@@ -47,6 +47,18 @@ async def reply_text(reply_token: str, text: str) -> None:
         )
 
 
+async def get_profile(user_id: str) -> dict:
+    """Fetch a LINE user's public profile (display name, picture) for the chat inbox."""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(
+            f"{_LINE_API}/v2/bot/profile/{user_id}",
+            headers={"Authorization": f"Bearer {settings.line_channel_access_token}"},
+        )
+        if resp.status_code != 200:
+            return {}
+        return resp.json()
+
+
 async def push_text(user_id: str, text: str) -> None:
     async with AsyncApiClient(_cfg()) as client:
         await AsyncMessagingApi(client).push_message(

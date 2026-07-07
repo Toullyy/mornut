@@ -44,6 +44,18 @@ def list_bookings(clinic_id: str, date: str) -> list[dict]:
     return [_row_to_booking(dict(r)) for r in rows]
 
 
+def list_bookings_range(clinic_id: str, start_date: str, end_date: str) -> list[dict]:
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "SELECT * FROM bookings WHERE clinic_id = %s AND date BETWEEN %s AND %s "
+                "ORDER BY date ASC, time ASC",
+                (clinic_id, start_date, end_date),
+            )
+            rows = cur.fetchall()
+    return [_row_to_booking(dict(r)) for r in rows]
+
+
 def create_booking(
     clinic_id: str,
     date: str,
@@ -478,6 +490,66 @@ def ensure_schema() -> None:
                 )
                 """
             )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS chat_conversations (
+                    line_user_id        TEXT PRIMARY KEY,
+                    clinic_id           TEXT NOT NULL,
+                    display_name        TEXT NOT NULL DEFAULT '',
+                    picture_url         TEXT NOT NULL DEFAULT '',
+                    mode                TEXT NOT NULL DEFAULT 'ai' CHECK (mode IN ('ai', 'admin')),
+                    status              TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
+                    needs_attention     BOOLEAN NOT NULL DEFAULT FALSE,
+                    last_admin_reply_at TIMESTAMPTZ,
+                    last_message_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    last_message_preview TEXT NOT NULL DEFAULT '',
+                    unread_count        INTEGER NOT NULL DEFAULT 0,
+                    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_chat_conversations_clinic "
+                "ON chat_conversations(clinic_id, last_message_at DESC)"
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id           UUID PRIMARY KEY,
+                    line_user_id TEXT NOT NULL REFERENCES chat_conversations(line_user_id) ON DELETE CASCADE,
+                    direction    TEXT NOT NULL CHECK (direction IN ('in', 'out')),
+                    sender       TEXT NOT NULL CHECK (sender IN ('patient', 'ai', 'admin')),
+                    text         TEXT NOT NULL,
+                    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation "
+                "ON chat_messages(line_user_id, created_at)"
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS booking_reminders (
+                    id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    clinic_id          TEXT NOT NULL,
+                    patient_line_id    TEXT NOT NULL,
+                    patient_name       TEXT NOT NULL,
+                    patient_phone      TEXT NOT NULL DEFAULT '',
+                    interval_days      INTEGER NOT NULL CHECK (interval_days > 0),
+                    next_reminder_date DATE NOT NULL,
+                    status             TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'stopped')),
+                    last_reminded_at   TIMESTAMPTZ,
+                    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_booking_reminders_clinic "
+                "ON booking_reminders(clinic_id, next_reminder_date)"
+            )
 
 
 def get_line_settings(clinic_id: str) -> Optional[dict]:
@@ -509,3 +581,301 @@ def upsert_line_settings(clinic_id: str, **fields) -> dict:
             )
             row = cur.fetchone()
     return dict(row)
+
+
+# ── Chat (AI / admin-override) ─────────────────────────────────────────────────
+
+_MESSAGE_PREVIEW_LEN = 80
+
+
+def get_conversation(line_user_id: str) -> Optional[dict]:
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "SELECT * FROM chat_conversations WHERE line_user_id = %s", (line_user_id,)
+            )
+            row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def get_or_create_conversation(
+    line_user_id: str, clinic_id: str, display_name: str = "", picture_url: str = ""
+) -> dict:
+    """Fetch a conversation, creating it (as a fresh AI-mode thread) if it's new."""
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                """
+                INSERT INTO chat_conversations (line_user_id, clinic_id, display_name, picture_url)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (line_user_id) DO NOTHING
+                """,
+                (line_user_id, clinic_id, display_name, picture_url),
+            )
+            cur.execute(
+                "SELECT * FROM chat_conversations WHERE line_user_id = %s", (line_user_id,)
+            )
+            row = cur.fetchone()
+    return dict(row)
+
+
+def list_conversations(clinic_id: str) -> list[dict]:
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "SELECT * FROM chat_conversations WHERE clinic_id = %s "
+                "ORDER BY last_message_at DESC",
+                (clinic_id,),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+
+def get_messages(line_user_id: str, limit: int = 100) -> list[dict]:
+    """Return up to `limit` most recent messages, oldest first."""
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "SELECT * FROM chat_messages WHERE line_user_id = %s "
+                "ORDER BY created_at DESC LIMIT %s",
+                (line_user_id, limit),
+            )
+            rows = cur.fetchall()
+    return [dict(r) for r in reversed(rows)]
+
+
+def get_last_inbound_message(line_user_id: str) -> Optional[dict]:
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "SELECT * FROM chat_messages WHERE line_user_id = %s AND direction = 'in' "
+                "ORDER BY created_at DESC LIMIT 1",
+                (line_user_id,),
+            )
+            row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def add_message(line_user_id: str, direction: str, sender: str, text: str) -> dict:
+    message_id = str(uuid.uuid4())
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "INSERT INTO chat_messages (id, line_user_id, direction, sender, text) "
+                "VALUES (%s, %s, %s, %s, %s) RETURNING *",
+                (message_id, line_user_id, direction, sender, text),
+            )
+            row = cur.fetchone()
+    return dict(row)
+
+
+def record_inbound_message(line_user_id: str, text: str) -> None:
+    """Log an inbound patient message and bump the conversation's last-message bookkeeping."""
+    add_message(line_user_id, "in", "patient", text)
+    preview = text.strip()[:_MESSAGE_PREVIEW_LEN]
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "UPDATE chat_conversations SET "
+                "last_message_at = NOW(), last_message_preview = %s, "
+                "unread_count = unread_count + 1, updated_at = NOW() "
+                "WHERE line_user_id = %s",
+                (preview, line_user_id),
+            )
+
+
+def record_outbound_message(line_user_id: str, sender: str, text: str) -> None:
+    """Log an AI/admin reply. Does not touch last_message_at (that tracks patient activity)."""
+    add_message(line_user_id, "out", sender, text)
+
+
+def set_conversation_admin_reply(line_user_id: str) -> dict:
+    """Admin sent a manual reply: take over from AI and clear unread/attention flags."""
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "UPDATE chat_conversations SET "
+                "mode = 'admin', status = 'open', needs_attention = FALSE, "
+                "last_admin_reply_at = NOW(), unread_count = 0, updated_at = NOW() "
+                "WHERE line_user_id = %s RETURNING *",
+                (line_user_id,),
+            )
+            row = cur.fetchone()
+    return dict(row)
+
+
+def set_conversation_mode(line_user_id: str, mode: str) -> dict:
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "UPDATE chat_conversations SET mode = %s, updated_at = NOW() "
+                "WHERE line_user_id = %s RETURNING *",
+                (mode, line_user_id),
+            )
+            row = cur.fetchone()
+    return dict(row)
+
+
+def resolve_conversation(line_user_id: str) -> dict:
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "UPDATE chat_conversations SET status = 'resolved', updated_at = NOW() "
+                "WHERE line_user_id = %s RETURNING *",
+                (line_user_id,),
+            )
+            row = cur.fetchone()
+    return dict(row)
+
+
+def reopen_conversation_as_ai(line_user_id: str) -> dict:
+    """Used both when a resolved thread gets a new message and when an admin-mode
+    conversation times out — either way, AI takes over a fresh/open thread."""
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "UPDATE chat_conversations SET mode = 'ai', status = 'open', updated_at = NOW() "
+                "WHERE line_user_id = %s RETURNING *",
+                (line_user_id,),
+            )
+            row = cur.fetchone()
+    return dict(row)
+
+
+def set_needs_attention(line_user_id: str, flag: bool) -> None:
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "UPDATE chat_conversations SET needs_attention = %s, updated_at = NOW() "
+                "WHERE line_user_id = %s",
+                (flag, line_user_id),
+            )
+
+
+def list_timed_out_admin_conversations(timeout_minutes: int) -> list[dict]:
+    """Conversations stuck in admin mode with an inbound message the admin never
+    answered, older than the timeout window."""
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                """
+                SELECT * FROM chat_conversations
+                WHERE mode = 'admin' AND status = 'open'
+                  AND last_message_at < NOW() - (%s || ' minutes')::INTERVAL
+                  AND (last_admin_reply_at IS NULL OR last_admin_reply_at < last_message_at)
+                """,
+                (timeout_minutes,),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+
+# ── Booking reminders (recurring LINE "come back for a checkup" nudges) ────────
+
+_BOOKING_REMINDER_FIELDS = ("interval_days", "next_reminder_date", "status")
+
+
+def create_booking_reminder(
+    clinic_id: str,
+    patient_line_id: str,
+    patient_name: str,
+    patient_phone: str,
+    interval_days: int,
+    start_date: str,
+) -> dict:
+    reminder_id = str(uuid.uuid4())
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                """
+                INSERT INTO booking_reminders (
+                    id, clinic_id, patient_line_id, patient_name, patient_phone,
+                    interval_days, next_reminder_date
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING *
+                """,
+                (reminder_id, clinic_id, patient_line_id, patient_name, patient_phone, interval_days, start_date),
+            )
+            row = cur.fetchone()
+    return dict(row)
+
+
+def list_booking_reminders(clinic_id: str) -> list[dict]:
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "SELECT * FROM booking_reminders WHERE clinic_id = %s "
+                "ORDER BY (status = 'active') DESC, next_reminder_date ASC",
+                (clinic_id,),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+
+def get_booking_reminder(reminder_id: str) -> Optional[dict]:
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute("SELECT * FROM booking_reminders WHERE id = %s", (reminder_id,))
+            row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def update_booking_reminder(reminder_id: str, **fields) -> dict:
+    cols = [f for f in fields if f in _BOOKING_REMINDER_FIELDS]
+    values = [fields[c] for c in cols]
+    set_clause = ", ".join(f"{c} = %s" for c in cols) + ", updated_at = NOW()" if cols else "updated_at = NOW()"
+
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                f"UPDATE booking_reminders SET {set_clause} WHERE id = %s RETURNING *",
+                [*values, reminder_id],
+            )
+            row = cur.fetchone()
+    return dict(row)
+
+
+def list_due_reminders(clinic_id: str) -> list[dict]:
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "SELECT * FROM booking_reminders "
+                "WHERE clinic_id = %s AND status = 'active' AND next_reminder_date <= CURRENT_DATE",
+                (clinic_id,),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+
+def mark_reminder_sent(reminder_id: str) -> dict:
+    """Push succeeded: record it and push next_reminder_date forward by the
+    interval. Reminders run indefinitely until an admin stops them."""
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                """
+                UPDATE booking_reminders SET
+                    last_reminded_at = NOW(),
+                    next_reminder_date = (next_reminder_date + (interval_days || ' days')::INTERVAL)::DATE,
+                    updated_at = NOW()
+                WHERE id = %s
+                RETURNING *
+                """,
+                (reminder_id,),
+            )
+            row = cur.fetchone()
+    return dict(row)
+
+
+def list_line_patients(clinic_id: str) -> list[dict]:
+    """Distinct patients who have a real LINE account on file (excludes admin-
+    created walk-ins, which all share the literal patient_line_id='walk-in'
+    and so have no LINE account to push a reminder to)."""
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                """
+                SELECT DISTINCT ON (patient_line_id) patient_line_id, patient_name, phone
+                FROM bookings
+                WHERE clinic_id = %s AND patient_line_id <> 'walk-in'
+                ORDER BY patient_line_id, created_at DESC
+                """,
+                (clinic_id,),
+            )
+            return [dict(r) for r in cur.fetchall()]

@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     # e.g. ALLOWED_ORIGINS=https://app.example.com,https://www.example.com
     allowed_origins: str = "http://localhost:5173,http://localhost:3000"
 
+    # AI chat (OpenAI) — leave key empty to disable AI auto-replies
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+
+    # Minutes an admin-mode conversation can sit unanswered before AI takes it back
+    chat_admin_timeout_minutes: int = 30
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 
