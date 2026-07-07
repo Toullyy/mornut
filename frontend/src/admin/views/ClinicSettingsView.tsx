@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, Clock3, Loader2, MapPin, Package, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
+import { TimePicker } from '../ui/TimePicker'
 import {
   getClinicSettings, updateClinicSettings,
   fetchAdminServices, createService, updateService, deleteService,
@@ -12,7 +13,6 @@ import { CLINIC_ID } from '../types'
 
 function ClinicInfoSection() {
   const fieldFull = 'w-full text-sm bg-input-background border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring/30'
-  const timeInput = 'text-sm bg-input-background border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring/30 font-mono'
   const [name, setName] = useState('')
   const [address, setAddress] = useState('')
   const [phone, setPhone] = useState('')
@@ -71,12 +71,19 @@ function ClinicInfoSection() {
             <div>
               <label className="block text-xs font-semibold text-muted-foreground mb-1.5">เวลาทำการ</label>
               <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <Clock3 size={14} className="text-muted-foreground shrink-0" />
-                  <input type="time" value={openTime} onChange={e => setOpenTime(e.target.value)} className={timeInput} />
-                </div>
+                <Clock3 size={14} className="text-muted-foreground shrink-0" />
+                <TimePicker
+                  value={openTime}
+                  onChange={setOpenTime}
+                  invalid={Boolean(openTime && closeTime && openTime >= closeTime)}
+                />
                 <span className="text-sm text-muted-foreground">ถึง</span>
-                <input type="time" value={closeTime} onChange={e => setCloseTime(e.target.value)} className={timeInput} />
+                <TimePicker
+                  value={closeTime}
+                  onChange={setCloseTime}
+                  minTime={openTime || undefined}
+                  invalid={Boolean(openTime && closeTime && openTime >= closeTime)}
+                />
               </div>
               {openTime >= closeTime && openTime && closeTime && (
                 <p className="text-xs text-destructive mt-1.5">เวลาเปิดต้องน้อยกว่าเวลาปิด</p>

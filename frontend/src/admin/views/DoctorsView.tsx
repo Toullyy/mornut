@@ -284,6 +284,10 @@ function ScheduleEditor({ doctor, schedule, onSlotsChange, onSave, saving, saved
   clinicOpenTime?: string
   clinicCloseTime?: string
 }) {
+  const hasInvalidSlots = Object.values(schedule).some(slots =>
+    slots.some(s => s.start && s.end && s.start >= s.end)
+  )
+
   const [expandedDay, setExpandedDay] = useState<number | null>(null)
   const [selectedDays, setSelectedDays] = useState<Set<number>>(new Set())
   const [copyDay, setCopyDay] = useState<number | null>(null)
@@ -330,8 +334,9 @@ function ScheduleEditor({ doctor, schedule, onSlotsChange, onSave, saving, saved
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {error && <span className="text-xs text-destructive">{error}</span>}
-          <button onClick={onSave} disabled={saving}
+          {hasInvalidSlots && <span className="text-xs text-destructive">ช่วงเวลาไม่ถูกต้อง</span>}
+          {!hasInvalidSlots && error && <span className="text-xs text-destructive">{error}</span>}
+          <button onClick={onSave} disabled={saving || hasInvalidSlots}
             className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors cursor-pointer">
             <Save size={13} />{saving ? 'กำลังบันทึก...' : saved ? 'บันทึกแล้ว ✓' : 'บันทึก'}
           </button>
@@ -423,24 +428,35 @@ function ScheduleEditor({ doctor, schedule, onSlotsChange, onSave, saving, saved
                       </button>
                     )}
                   </div>
-                  <div className="flex flex-col gap-2">
-                    {slots.map((slot, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <TimePicker
-                          value={slot.start}
-                          onChange={v => { const next = [...slots]; next[i] = { ...slot, start: v }; onSlotsChange(dayIdx, next) }}
-                        />
-                        <span className="text-muted-foreground text-xs">–</span>
-                        <TimePicker
-                          value={slot.end}
-                          onChange={v => { const next = [...slots]; next[i] = { ...slot, end: v }; onSlotsChange(dayIdx, next) }}
-                        />
-                        <button onClick={() => onSlotsChange(dayIdx, slots.filter((_, j) => j !== i))}
-                          className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors cursor-pointer">
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    ))}
+                  <div className="flex flex-col gap-1.5">
+                    {slots.map((slot, i) => {
+                      const invalid = Boolean(slot.start && slot.end && slot.start >= slot.end)
+                      return (
+                        <div key={i} className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-2">
+                            <TimePicker
+                              value={slot.start}
+                              onChange={v => { const next = [...slots]; next[i] = { ...slot, start: v }; onSlotsChange(dayIdx, next) }}
+                              invalid={invalid}
+                            />
+                            <span className="text-muted-foreground text-xs">–</span>
+                            <TimePicker
+                              value={slot.end}
+                              onChange={v => { const next = [...slots]; next[i] = { ...slot, end: v }; onSlotsChange(dayIdx, next) }}
+                              minTime={slot.start || undefined}
+                              invalid={invalid}
+                            />
+                            <button onClick={() => onSlotsChange(dayIdx, slots.filter((_, j) => j !== i))}
+                              className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors cursor-pointer">
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                          {invalid && (
+                            <p className="text-[11px] text-destructive pl-1">เวลาเริ่มต้นต้องน้อยกว่าเวลาสิ้นสุด</p>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                   <button onClick={() => onSlotsChange(dayIdx, [...slots, { start: clinicOpenTime, end: clinicCloseTime }])}
                     className="mt-2.5 flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors cursor-pointer">

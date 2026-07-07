@@ -6,11 +6,18 @@ interface Props {
   onChange: (v: string) => void
   minHour?: number       // earliest selectable hour (default 6)
   maxHour?: number       // latest selectable hour (default 22)
+  minTime?: string       // "HH:MM" — no time at or before this is selectable
+  invalid?: boolean      // show red border
 }
 
 const MINUTES = ['00', '30']
 
-export function TimePicker({ value, onChange, minHour = 6, maxHour = 22 }: Props) {
+function parseHM(t: string): [number, number] {
+  const [h, m] = t.split(':')
+  return [parseInt(h, 10), parseInt(m, 10)]
+}
+
+export function TimePicker({ value, onChange, minHour = 6, maxHour = 22, minTime, invalid }: Props) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -20,7 +27,8 @@ export function TimePicker({ value, onChange, minHour = 6, maxHour = 22 }: Props
 
   const [draftHour, setDraftHour] = useState<number | null>(selHour)
 
-  // sync draft when external value changes
+  const [minH, minM] = minTime ? parseHM(minTime) : [minHour, -1]
+
   useEffect(() => {
     if (value) setDraftHour(parseInt(value.split(':')[0], 10))
   }, [value])
@@ -34,16 +42,32 @@ export function TimePicker({ value, onChange, minHour = 6, maxHour = 22 }: Props
     return () => document.removeEventListener('mousedown', onDown)
   }, [open])
 
+  function isHourDisabled(h: number): boolean {
+    return h < minH
+  }
+
+  function isMinuteDisabled(m: string): boolean {
+    const activeH = draftHour ?? selHour ?? minH
+    if (activeH > minH) return false
+    if (activeH < minH) return true
+    return parseInt(m, 10) <= minM
+  }
+
   function pickHour(h: number) {
+    if (isHourDisabled(h)) return
     setDraftHour(h)
-    // if minute already chosen, commit immediately; otherwise wait for minute
-    if (selMin) {
+    if (selMin && !isMinuteDisabled(selMin)) {
+      onChange(`${String(h).padStart(2, '0')}:${selMin}`)
+    } else if (selMin && isMinuteDisabled(selMin)) {
+      // current minute is no longer valid — clear minute by keeping draft only
+    } else if (selMin) {
       onChange(`${String(h).padStart(2, '0')}:${selMin}`)
     }
   }
 
   function pickMinute(m: string) {
-    const h = draftHour ?? selHour ?? minHour
+    if (isMinuteDisabled(m)) return
+    const h = draftHour ?? selHour ?? minH
     onChange(`${String(h).padStart(2, '0')}:${m}`)
     setOpen(false)
   }
@@ -59,10 +83,15 @@ export function TimePicker({ value, onChange, minHour = 6, maxHour = 22 }: Props
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-2 text-sm bg-input-background border border-border rounded-lg px-3 py-2 hover:border-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-ring/30 transition-colors cursor-pointer min-w-[90px]"
+        className={[
+          'flex items-center gap-2 text-sm bg-input-background border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 transition-colors cursor-pointer min-w-[90px]',
+          invalid
+            ? 'border-destructive focus:ring-destructive/30'
+            : 'border-border hover:border-muted-foreground/40 focus:ring-ring/30',
+        ].join(' ')}
       >
-        <Clock size={13} className="text-muted-foreground shrink-0" />
-        <span className={`font-mono font-medium ${value ? 'text-foreground' : 'text-muted-foreground'}`}>
+        <Clock size={13} className={invalid ? 'text-destructive shrink-0' : 'text-muted-foreground shrink-0'} />
+        <span className={`font-mono font-medium ${value ? (invalid ? 'text-destructive' : 'text-foreground') : 'text-muted-foreground'}`}>
           {display}
         </span>
       </button>
@@ -74,16 +103,20 @@ export function TimePicker({ value, onChange, minHour = 6, maxHour = 22 }: Props
           <div className="grid grid-cols-4 gap-1 mb-3">
             {hours.map(h => {
               const isSelected = draftHour === h
+              const disabled = isHourDisabled(h)
               return (
                 <button
                   key={h}
                   type="button"
+                  disabled={disabled}
                   onClick={() => pickHour(h)}
                   className={[
-                    'h-8 rounded-lg text-sm font-mono font-medium transition-colors cursor-pointer',
-                    isSelected
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-foreground hover:bg-muted',
+                    'h-8 rounded-lg text-sm font-mono font-medium transition-colors',
+                    disabled
+                      ? 'text-muted-foreground/30 cursor-not-allowed'
+                      : isSelected
+                        ? 'bg-primary text-primary-foreground cursor-pointer'
+                        : 'text-foreground hover:bg-muted cursor-pointer',
                   ].join(' ')}
                 >
                   {String(h).padStart(2, '0')}
@@ -97,16 +130,20 @@ export function TimePicker({ value, onChange, minHour = 6, maxHour = 22 }: Props
           <div className="flex gap-2">
             {MINUTES.map(m => {
               const isSelected = selMin === m && draftHour === selHour
+              const disabled = isMinuteDisabled(m)
               return (
                 <button
                   key={m}
                   type="button"
+                  disabled={disabled}
                   onClick={() => pickMinute(m)}
                   className={[
-                    'flex-1 h-9 rounded-lg text-sm font-mono font-semibold transition-colors cursor-pointer',
-                    isSelected
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted text-foreground hover:bg-muted-foreground/20',
+                    'flex-1 h-9 rounded-lg text-sm font-mono font-semibold transition-colors',
+                    disabled
+                      ? 'bg-muted text-muted-foreground/30 cursor-not-allowed'
+                      : isSelected
+                        ? 'bg-primary text-primary-foreground cursor-pointer'
+                        : 'bg-muted text-foreground hover:bg-muted-foreground/20 cursor-pointer',
                   ].join(' ')}
                 >
                   :{m}
@@ -115,8 +152,7 @@ export function TimePicker({ value, onChange, minHour = 6, maxHour = 22 }: Props
             })}
           </div>
 
-          {/* Current selection hint */}
-          {draftHour !== null && (
+          {draftHour !== null && !selMin && (
             <p className="text-center text-xs text-muted-foreground mt-2.5">
               {String(draftHour).padStart(2, '0')}:__ &nbsp;→&nbsp; เลือกนาทีด้านบน
             </p>
