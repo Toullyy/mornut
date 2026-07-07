@@ -17,14 +17,14 @@ function computeInitials(name: string): string {
   return cleaned.substring(0, 2)
 }
 
-function apiShiftsToSchedule(shifts: { day_of_week: number; start: string; end: string }[]): WeekSchedule {
+export function apiShiftsToSchedule(shifts: { day_of_week: number; start: string; end: string }[]): WeekSchedule {
   return shifts.reduce<WeekSchedule>((acc, s) => {
     ;(acc[s.day_of_week] ??= []).push({ start: s.start, end: s.end })
     return acc
   }, {})
 }
 
-function scheduleToApiShifts(schedule: WeekSchedule) {
+export function scheduleToApiShifts(schedule: WeekSchedule) {
   return Object.entries(schedule).flatMap(([day, slots]) =>
     slots.map(s => ({ day_of_week: Number(day), start: s.start, end: s.end }))
   )

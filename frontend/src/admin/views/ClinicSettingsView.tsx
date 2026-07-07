@@ -1,15 +1,33 @@
 import { useCallback, useEffect, useState } from 'react'
-import { AlertCircle, Clock3, Loader2, MapPin, Package, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
+import { AlertCircle, AlertTriangle, Clock3, Loader2, MapPin, Package, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
 import { TimePicker } from '../ui/TimePicker'
 import {
   getClinicSettings, updateClinicSettings,
   fetchAdminServices, createService, updateService, deleteService,
+  fetchDoctors, updateDoctorShifts,
   type ServiceItem, type ServiceCreate,
 } from '../api'
 import { SettingsSection } from '../ui/SettingsLayout'
-import { CLINIC_ID } from '../types'
+import { CLINIC_ID, type DaySlot, type WeekSchedule } from '../types'
+import { apiShiftsToSchedule, scheduleToApiShifts } from './DoctorsView'
 
 // ── Clinic Info Section ───────────────────────────────────────────────────────
+
+type ConflictDoctor = { id: string; name: string; fixed: WeekSchedule }
+
+function clipSchedule(schedule: WeekSchedule, open: string, close: string): WeekSchedule {
+  const result: WeekSchedule = {}
+  for (const [day, slots] of Object.entries(schedule)) {
+    const clipped: DaySlot[] = []
+    for (const s of slots) {
+      const start = s.start < open ? open : s.start
+      const end = s.end > close ? close : s.end
+      if (start < end) clipped.push({ start, end })
+    }
+    result[Number(day)] = clipped
+  }
+  return result
+}
 
 function ClinicInfoSection() {
   const fieldFull = 'w-full text-sm bg-input-background border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring/30'
@@ -22,6 +40,8 @@ function ClinicInfoSection() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [conflicts, setConflicts] = useState<ConflictDoctor[]>([])
+  const [fixing, setFixing] = useState(false)
 
   useEffect(() => {
     getClinicSettings(CLINIC_ID)
@@ -38,14 +58,40 @@ function ClinicInfoSection() {
 
   async function handleSave() {
     if (openTime >= closeTime) { setError('เวลาเปิดต้องน้อยกว่าเวลาปิด'); return }
-    setSaving(true); setError(''); setNotice('')
+    setSaving(true); setError(''); setNotice(''); setConflicts([])
     try {
       await updateClinicSettings(CLINIC_ID, { name, address, phone, open_time: openTime, close_time: closeTime })
-      setNotice('บันทึกแล้ว')
+      // Check if any doctor schedules fall outside the new hours
+      const doctors = await fetchDoctors(CLINIC_ID)
+      const found: ConflictDoctor[] = []
+      for (const doc of doctors) {
+        const schedule = apiShiftsToSchedule(doc.shifts ?? [])
+        const hasConflict = Object.values(schedule).some(slots =>
+          slots.some(s => s.start < openTime || s.end > closeTime)
+        )
+        if (hasConflict) {
+          found.push({ id: doc.id, name: doc.name, fixed: clipSchedule(schedule, openTime, closeTime) })
+        }
+      }
+      setConflicts(found)
+      setNotice(found.length > 0 ? '' : 'บันทึกแล้ว')
     } catch (e) {
       setError((e as Error).message || 'เกิดข้อผิดพลาด')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleAutoFix() {
+    setFixing(true)
+    try {
+      await Promise.all(conflicts.map(c => updateDoctorShifts(c.id, scheduleToApiShifts(c.fixed))))
+      setConflicts([])
+      setNotice('บันทึกแล้ว และปรับตารางแพทย์เรียบร้อย')
+    } catch (e) {
+      setError((e as Error).message || 'ปรับตารางแพทย์ไม่สำเร็จ')
+    } finally {
+      setFixing(false)
     }
   }
 
@@ -96,6 +142,36 @@ function ClinicInfoSection() {
                 {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}บันทึก
               </button>
             </div>
+
+            {/* Doctor schedule conflict warning */}
+            {conflicts.length > 0 && (
+              <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-4 flex flex-col gap-3">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle size={15} className="text-yellow-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold text-yellow-800">ตารางแพทย์ไม่ตรงกับเวลาทำการใหม่</p>
+                    <p className="text-xs text-yellow-700 mt-0.5">แพทย์ต่อไปนี้มีช่วงเวลาทำงานนอกเหนือเวลา {openTime}–{closeTime}</p>
+                  </div>
+                </div>
+                <ul className="flex flex-col gap-1 pl-5">
+                  {conflicts.map(c => (
+                    <li key={c.id} className="text-sm text-yellow-800 font-medium list-disc">{c.name}</li>
+                  ))}
+                </ul>
+                <div className="flex items-center gap-2 pt-1">
+                  <button onClick={handleAutoFix} disabled={fixing}
+                    className="flex items-center gap-1.5 bg-yellow-600 text-white text-sm font-medium px-3.5 py-1.5 rounded-lg hover:bg-yellow-700 disabled:opacity-50 transition-colors cursor-pointer">
+                    {fixing ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                    ปรับตารางแพทย์อัตโนมัติ
+                  </button>
+                  <button onClick={() => { setConflicts([]); setNotice('บันทึกแล้ว') }}
+                    className="text-sm text-yellow-700 hover:text-yellow-900 px-3 py-1.5 rounded-lg hover:bg-yellow-100 transition-colors cursor-pointer">
+                    ข้าม (แก้ทีหลัง)
+                  </button>
+                </div>
+              </div>
+            )}
+
             {error && <p className="text-sm text-destructive flex items-center gap-1.5"><AlertCircle size={14} />{error}</p>}
             {notice && !error && <p className="text-sm text-primary">{notice}</p>}
           </>
