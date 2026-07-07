@@ -650,6 +650,50 @@ def ensure_schema() -> None:
                 "CREATE INDEX IF NOT EXISTS idx_booking_reminders_clinic "
                 "ON booking_reminders(clinic_id, next_reminder_date)"
             )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS doctor_time_slots (
+                    id          SERIAL PRIMARY KEY,
+                    doctor_id   UUID NOT NULL REFERENCES doctors(id) ON DELETE CASCADE,
+                    day_of_week INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
+                    start_time  TIME NOT NULL,
+                    end_time    TIME NOT NULL,
+                    sort_order  INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_time_slots_doctor "
+                "ON doctor_time_slots(doctor_id, day_of_week)"
+            )
+            # One-time migration: copy morning/afternoon rows → time slots
+            cur.execute(
+                """
+                INSERT INTO doctor_time_slots (doctor_id, day_of_week, start_time, end_time, sort_order)
+                SELECT doctor_id, day_of_week, '08:00'::time, '12:00'::time, 0
+                FROM doctor_shifts ds
+                WHERE ds.morning = TRUE
+                  AND NOT EXISTS (
+                    SELECT 1 FROM doctor_time_slots ts
+                    WHERE ts.doctor_id = ds.doctor_id
+                      AND ts.day_of_week = ds.day_of_week
+                  )
+                """
+            )
+            cur.execute(
+                """
+                INSERT INTO doctor_time_slots (doctor_id, day_of_week, start_time, end_time, sort_order)
+                SELECT doctor_id, day_of_week, '13:00'::time, '17:00'::time, 1
+                FROM doctor_shifts ds
+                WHERE ds.afternoon = TRUE
+                  AND NOT EXISTS (
+                    SELECT 1 FROM doctor_time_slots ts
+                    WHERE ts.doctor_id = ds.doctor_id
+                      AND ts.day_of_week = ds.day_of_week
+                      AND ts.start_time = '13:00'::time
+                  )
+                """
+            )
 
 
 # ── Clinic settings ───────────────────────────────────────────────────────────
