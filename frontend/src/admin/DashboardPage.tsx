@@ -48,6 +48,7 @@ import { apiFetch } from '../lib/api'
 import { useBookings } from '../hooks/useBookings'
 import { useChatConversations, useChatMessages } from '../hooks/useChat'
 import AdminLogin from './AdminLogin'
+import { DatePicker } from './DatePicker'
 import {
   updateBookingStatus,
   setQuota,
@@ -431,11 +432,9 @@ function AddQueueModal({
 
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-muted-foreground">วันที่</label>
-            <input
-              type="date"
+            <DatePicker
               value={form.date}
-              onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
-              className={field}
+              onChange={v => setForm(f => ({ ...f, date: v }))}
             />
           </div>
 
@@ -1275,11 +1274,10 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
           <p className="text-sm text-muted-foreground mt-0.5">{todayLabel} · อัปเดตแบบ Real-time</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <input
-            type="date"
+          <DatePicker
             value={date}
-            onChange={e => onDateChange(e.target.value)}
-            className="text-sm bg-input-background border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring/30"
+            onChange={onDateChange}
+            className="w-48"
           />
           <button
             onClick={onRefresh}
@@ -2117,7 +2115,7 @@ function AddBookingReminderModal({
 
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-muted-foreground">วันแจ้งเตือนครั้งแรก <span className="text-destructive">*</span></label>
-            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={field} />
+            <DatePicker value={startDate} onChange={setStartDate} />
           </div>
 
           <div className="flex flex-col gap-1.5">
