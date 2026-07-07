@@ -94,6 +94,22 @@ export function fetchAllBookings<T>(clinicId: string): Promise<T[]> {
   return apiFetch<T[]>(`/admin/bookings?clinic_id=${clinicId}`)
 }
 
+export interface BookingPagedResult<T> {
+  items: T[]
+  total: number
+}
+
+export function fetchBookingHistory<T>(
+  clinicId: string,
+  page: number,
+  pageSize: number,
+  search: string,
+): Promise<BookingPagedResult<T>> {
+  const qs = new URLSearchParams({ clinic_id: clinicId, page: String(page), page_size: String(pageSize) })
+  if (search) qs.set('search', search)
+  return apiFetch<BookingPagedResult<T>>(`/admin/bookings/paged?${qs}`)
+}
+
 export function createAdminBooking(data: AdminBookingCreate): Promise<{ id: string }> {
   return apiFetch<{ id: string }>('/admin/bookings', {
     method: 'POST',

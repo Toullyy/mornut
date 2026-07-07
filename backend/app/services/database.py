@@ -67,6 +67,41 @@ def list_all_bookings(clinic_id: str) -> list[dict]:
     return [_row_to_booking(dict(r)) for r in rows]
 
 
+def list_all_bookings_paged(
+    clinic_id: str, search: str, page: int, page_size: int
+) -> tuple[list[dict], int]:
+    offset = (page - 1) * page_size
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            if search:
+                like = f"%{search}%"
+                cur.execute(
+                    "SELECT COUNT(*) AS n FROM bookings WHERE clinic_id = %s "
+                    "AND (patient_name ILIKE %s OR phone ILIKE %s)",
+                    (clinic_id, like, like),
+                )
+                total = cur.fetchone()["n"]
+                cur.execute(
+                    "SELECT * FROM bookings WHERE clinic_id = %s "
+                    "AND (patient_name ILIKE %s OR phone ILIKE %s) "
+                    "ORDER BY date DESC, time DESC LIMIT %s OFFSET %s",
+                    (clinic_id, like, like, page_size, offset),
+                )
+            else:
+                cur.execute(
+                    "SELECT COUNT(*) AS n FROM bookings WHERE clinic_id = %s",
+                    (clinic_id,),
+                )
+                total = cur.fetchone()["n"]
+                cur.execute(
+                    "SELECT * FROM bookings WHERE clinic_id = %s "
+                    "ORDER BY date DESC, time DESC LIMIT %s OFFSET %s",
+                    (clinic_id, page_size, offset),
+                )
+            rows = cur.fetchall()
+    return [_row_to_booking(dict(r)) for r in rows], total
+
+
 def create_booking(
     clinic_id: str,
     date: str,

@@ -136,4 +136,45 @@ def reseed_today() -> dict:
                 """, (bid,f'Uline{sfx}',name,phone,sid,sname,dep,today,time,cov,status))
             report["demo_bookings"] = len(demo_rows)
 
+            # ── 60 historical bookings for pagination testing ──────────────────
+            hist_patients = [
+                ('สมชาย ใจดี',     '081-111-0001', 'Hline001'),
+                ('นิดา แสงทอง',    '081-111-0002', 'Hline002'),
+                ('ประเสริฐ คงดี',   '081-111-0003', 'Hline003'),
+                ('วาสนา มีสุข',     '081-111-0004', 'Hline004'),
+                ('เอกชัย ทองใบ',    '081-111-0005', 'Hline005'),
+                ('กัญญา พลับพลา',  '081-111-0006', 'Hline006'),
+                ('ธีรยุทธ ขจรฤทธิ์','081-111-0007', 'Hline007'),
+                ('สุภาพ รักษาดี',   '081-111-0008', 'Hline008'),
+                ('มานะ ศิลปกรณ์',  '081-111-0009', 'Hline009'),
+                ('จิตรา วิไลพร',    '081-111-0010', 'Hline010'),
+                ('บุญมา ชัยมงคล',   '081-111-0011', 'Hline011'),
+                ('ปริม สุทธิชัย',   '081-111-0012', 'Hline012'),
+            ]
+            hist_statuses = ['done', 'done', 'done', 'cancelled', 'no_show', 'confirmed']
+            hist_coverages = ['cash', 'sso', 'universal']
+            hist_times = ['08:00','08:30','09:00','09:30','10:00','10:30','13:00','13:30','14:00','14:30']
+
+            hist_count = 0
+            for i in range(60):
+                patient = hist_patients[i % len(hist_patients)]
+                p_name, p_phone, p_line = patient
+                svc_k = (i % 6) + 1
+                sid, sname, dep = SVC[svc_k]
+                cov = hist_coverages[i % 3]
+                status = hist_statuses[i % len(hist_statuses)]
+                time_val = hist_times[i % len(hist_times)]
+                days_ago = (i + 1) * 1 + (i // 10) * 5  # spread: 1-90 days ago
+                hist_date = today - timedelta(days=days_ago)
+                bid = f'h{i+1:07d}-0000-0000-0000-000000000000'
+                cur.execute("""
+                    INSERT INTO bookings
+                      (id,clinic_id,patient_line_id,patient_name,phone,
+                       service_id,service_name,deposit_amount,date,time,coverage,status)
+                    VALUES (%s,'clinic-001',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT (id) DO NOTHING
+                """, (bid, p_line, p_name, p_phone, sid, sname, dep, hist_date, time_val, cov, status))
+                hist_count += 1
+            report["hist_bookings"] = hist_count
+
     return report

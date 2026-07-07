@@ -50,7 +50,7 @@ import {
   setQuota,
   type QuotaLimits,
   fetchDoctors,
-  fetchAllBookings,
+  fetchBookingHistory,
   createDoctor as apiCreateDoctor,
   updateDoctor as apiUpdateDoctor,
   deleteDoctor as apiDeleteDoctor,
@@ -1484,23 +1484,36 @@ function PatientsView({ bookings, onBookPatient }: {
 }) {
   const [tab, setTab] = useState<'directory' | 'history'>('directory')
   const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [dirPage, setDirPage] = useState(1)
+  const [histPage, setHistPage] = useState(1)
   const PAGE_SIZE = 20
-  const [allBookings, setAllBookings] = useState<Booking[]>([])
-  const [histLoading, setHistLoading] = useState(false)
 
-  useEffect(() => { setPage(1) }, [search, tab])
+  // Debounce search for server-side calls
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(t)
+  }, [search])
+
+  // Reset pages on tab/search change
+  useEffect(() => { setDirPage(1) }, [search, tab])
+  useEffect(() => { setHistPage(1) }, [debouncedSearch, tab])
+
+  // ── History tab: server-side paginated ───────────────────────────────────
+  const [histItems, setHistItems] = useState<Booking[]>([])
+  const [histTotal, setHistTotal] = useState(0)
+  const [histLoading, setHistLoading] = useState(false)
 
   useEffect(() => {
     if (tab !== 'history') return
     setHistLoading(true)
-    fetchAllBookings<Booking>(CLINIC_ID)
-      .then(setAllBookings)
+    fetchBookingHistory<Booking>(CLINIC_ID, histPage, PAGE_SIZE, debouncedSearch)
+      .then(({ items, total }) => { setHistItems(items); setHistTotal(total) })
       .catch(console.error)
       .finally(() => setHistLoading(false))
-  }, [tab])
+  }, [tab, histPage, debouncedSearch])
 
-  // ── Tab 1: unique patient directory ──────────────────────────────────────
+  // ── Tab 1: unique patient directory (client-side) ─────────────────────────
   const uniquePatients = bookings.reduce((acc, b) => {
     if (!acc.find(p => p.phone === b.phone)) acc.push(b)
     return acc
@@ -1508,13 +1521,7 @@ function PatientsView({ bookings, onBookPatient }: {
   const filteredDir = uniquePatients.filter(
     p => p.patient_name.includes(search) || p.phone.includes(search),
   )
-  const paginatedDir = filteredDir.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-
-  // ── Tab 2: all bookings, newest first ────────────────────────────────────
-  const filteredHist = allBookings.filter(
-    b => b.patient_name.includes(search) || b.phone.includes(search),
-  )
-  const paginatedHist = filteredHist.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const paginatedDir = filteredDir.slice((dirPage - 1) * PAGE_SIZE, dirPage * PAGE_SIZE)
 
   const tabBtn = (id: 'directory' | 'history', label: string) => (
     <button
@@ -1538,7 +1545,7 @@ function PatientsView({ bookings, onBookPatient }: {
         </div>
         <div className="flex items-center gap-1 bg-muted/40 p-1 rounded-xl border border-border">
           {tabBtn('directory', `รายชื่อผู้ป่วย (${uniquePatients.length})`)}
-          {tabBtn('history', `ประวัติการนัด (${bookings.length})`)}
+          {tabBtn('history', `ประวัติการนัด${histTotal > 0 ? ` (${histTotal})` : ''}`)}
         </div>
       </div>
 
@@ -1592,7 +1599,7 @@ function PatientsView({ bookings, onBookPatient }: {
                 )}
               </tbody>
             </table>
-            <Pagination page={page} total={filteredDir.length} pageSize={PAGE_SIZE} onChange={setPage} />
+            <Pagination page={dirPage} total={filteredDir.length} pageSize={PAGE_SIZE} onChange={setDirPage} />
           </>
         ) : histLoading ? (
           <p className="text-center py-12 text-sm text-muted-foreground">กำลังโหลด...</p>
@@ -1610,7 +1617,7 @@ function PatientsView({ bookings, onBookPatient }: {
                 </tr>
               </thead>
               <tbody>
-                {paginatedHist.map(b => (
+                {histItems.map(b => (
                   <tr
                     key={b.id}
                     onClick={() => onBookPatient({ patient_name: b.patient_name, phone: b.phone })}
@@ -1629,12 +1636,12 @@ function PatientsView({ bookings, onBookPatient }: {
                     <td className="px-4 py-3.5"><StatusBadge status={b.status} /></td>
                   </tr>
                 ))}
-                {filteredHist.length === 0 && (
+                {histTotal === 0 && (
                   <tr><td colSpan={6} className="text-center py-12 text-muted-foreground text-sm">ไม่พบข้อมูล</td></tr>
                 )}
               </tbody>
             </table>
-            <Pagination page={page} total={filteredHist.length} pageSize={PAGE_SIZE} onChange={setPage} />
+            <Pagination page={histPage} total={histTotal} pageSize={PAGE_SIZE} onChange={setHistPage} />
           </>
         )}
       </div>

@@ -68,6 +68,26 @@ async def list_bookings(
     return [_to_out(r) for r in rows]
 
 
+class BookingPagedOut(BaseModel):
+    items: list[BookingOut]
+    total: int
+
+
+@router.get("/bookings/paged", response_model=BookingPagedOut)
+async def list_bookings_paged(
+    clinic_id: str = "",
+    page: int = 1,
+    page_size: int = 20,
+    search: str = "",
+    _admin: AdminUser = None,
+) -> BookingPagedOut:
+    cid = clinic_id or settings.clinic_id
+    items, total = await asyncio.to_thread(
+        repo.list_all_bookings_paged, cid, search, page, page_size
+    )
+    return BookingPagedOut(items=[_to_out(r) for r in items], total=total)
+
+
 @router.get("/bookings/range", response_model=list[BookingOut])
 async def list_bookings_range(
     start: str,
