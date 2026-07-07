@@ -3,13 +3,14 @@ import { createPortal } from 'react-dom'
 import { Clock } from 'lucide-react'
 
 interface Props {
-  value: string          // "HH:MM"
+  value: string            // "HH:MM"
   onChange: (v: string) => void
-  minHour?: number       // earliest selectable hour (default 6)
-  maxHour?: number       // latest selectable hour (default 22)
-  minTime?: string       // "HH:MM" — no time at or before this is selectable
-  maxTime?: string       // "HH:MM" — no time after this is selectable
-  invalid?: boolean      // show red border
+  minHour?: number         // earliest hour shown (default 6)
+  maxHour?: number         // latest hour shown (default 22)
+  minTime?: string         // "HH:MM" lower bound (exclusive by default)
+  minTimeInclusive?: boolean // if true, minTime itself is selectable (default false)
+  maxTime?: string         // "HH:MM" upper bound (inclusive)
+  invalid?: boolean        // show red border
 }
 
 const MINUTES = ['00', '30']
@@ -19,7 +20,12 @@ function parseHM(t: string): [number, number] {
   return [parseInt(h, 10), parseInt(m, 10)]
 }
 
-export function TimePicker({ value, onChange, minHour = 6, maxHour = 22, minTime, maxTime, invalid }: Props) {
+export function TimePicker({
+  value, onChange,
+  minHour = 6, maxHour = 22,
+  minTime, minTimeInclusive = false,
+  maxTime, invalid,
+}: Props) {
   const [open, setOpen] = useState(false)
   const btnRef = useRef<HTMLButtonElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
@@ -29,21 +35,31 @@ export function TimePicker({ value, onChange, minHour = 6, maxHour = 22, minTime
     ? [parseInt(value.split(':')[0], 10), value.split(':')[1]]
     : [null, null]
 
-  const [draftHour, setDraftHour] = useState<number | null>(selHour)
-
-  const [minH, minM] = minTime ? parseHM(minTime) : [minHour, -1]
+  const [minH, minM] = minTime ? parseHM(minTime) : [minHour, minTimeInclusive ? 0 : -1]
   const [maxH, maxM] = maxTime ? parseHM(maxTime) : [maxHour, 60]
 
+  const [draftHour, setDraftHour] = useState<number | null>(selHour)
+
+  // Keep draftHour in sync when value changes externally
   useEffect(() => {
-    if (value) setDraftHour(parseInt(value.split(':')[0], 10))
+    setDraftHour(value ? parseInt(value.split(':')[0], 10) : null)
   }, [value])
 
-  // position the portal popover below the button
+  // Reset draftHour when minTime/maxTime change so stale hours don't freeze the minute section
+  useEffect(() => {
+    setDraftHour(prev => {
+      if (prev === null) return prev
+      if (prev < minH || prev > maxH) return null
+      return prev
+    })
+  }, [minH, maxH, minM, maxM])
+
+  // Position popover below (or above if no room) the trigger button
   useEffect(() => {
     if (!open || !btnRef.current) return
     const r = btnRef.current.getBoundingClientRect()
     const spaceBelow = window.innerHeight - r.bottom
-    const popoverH = 260
+    const popoverH = 270
     const top = spaceBelow >= popoverH ? r.bottom + 6 : r.top - popoverH - 6
     setPopoverStyle({ position: 'fixed', top, left: r.left, width: 220, zIndex: 9999 })
   }, [open])
@@ -73,7 +89,10 @@ export function TimePicker({ value, onChange, minHour = 6, maxHour = 22, minTime
     const activeH = draftHour ?? selHour ?? minH
     const mInt = parseInt(m, 10)
     if (activeH < minH) return true
-    if (activeH === minH && mInt <= minM) return true
+    if (activeH === minH) {
+      // minTimeInclusive → allow the exact minute; otherwise block it
+      if (minTimeInclusive ? mInt < minM : mInt <= minM) return true
+    }
     if (activeH > maxH) return true
     if (activeH === maxH && mInt > maxM) return true
     return false
@@ -82,9 +101,22 @@ export function TimePicker({ value, onChange, minHour = 6, maxHour = 22, minTime
   function pickHour(h: number) {
     if (isHourDisabled(h)) return
     setDraftHour(h)
-    if (selMin && !isMinuteDisabled(selMin)) {
+    // auto-commit if the current minute is still valid with the new hour
+    if (selMin !== null && !isMinuteDisabledForHour(h, selMin)) {
       onChange(`${String(h).padStart(2, '0')}:${selMin}`)
     }
+  }
+
+  // isMinuteDisabled variant that uses a specific hour (not draftHour)
+  function isMinuteDisabledForHour(h: number, m: string): boolean {
+    const mInt = parseInt(m, 10)
+    if (h < minH) return true
+    if (h === minH) {
+      if (minTimeInclusive ? mInt < minM : mInt <= minM) return true
+    }
+    if (h > maxH) return true
+    if (h === maxH && mInt > maxM) return true
+    return false
   }
 
   function pickMinute(m: string) {
@@ -95,6 +127,9 @@ export function TimePicker({ value, onChange, minHour = 6, maxHour = 22, minTime
   }
 
   const hours = Array.from({ length: maxHour - minHour + 1 }, (_, i) => minHour + i)
+  const needsMinutePick = draftHour !== null && (
+    selHour !== draftHour || selMin === null
+  )
 
   const display = value
     ? `${String(selHour).padStart(2, '0')}:${selMin}`
@@ -158,7 +193,7 @@ export function TimePicker({ value, onChange, minHour = 6, maxHour = 22, minTime
         })}
       </div>
 
-      {draftHour !== null && !selMin && (
+      {needsMinutePick && (
         <p className="text-center text-xs text-muted-foreground mt-2.5">
           {String(draftHour).padStart(2, '0')}:__ &nbsp;→&nbsp; เลือกนาทีด้านบน
         </p>

@@ -287,11 +287,10 @@ function ScheduleEditor({ doctor, schedule, onSlotsChange, onSave, saving, saved
   function slotsHaveIssues(slots: DaySlot[]): boolean {
     for (let i = 0; i < slots.length; i++) {
       const s = slots[i]
-      if (!s.start || !s.end) continue
+      if (!s.start || !s.end) return true  // incomplete slot blocks save
       if (s.start >= s.end) return true
       if (s.start < clinicOpenTime) return true
       if (s.end > clinicCloseTime) return true
-      // overlap with another slot in the same day
       for (let j = 0; j < slots.length; j++) {
         if (i === j) continue
         const t = slots[j]
@@ -333,8 +332,6 @@ function ScheduleEditor({ doctor, schedule, onSlotsChange, onSave, saving, saved
     copyTargets.forEach(t => onSlotsChange(t, src.map(s => ({ ...s }))))
     setCopyDay(null); setCopyTargets(new Set())
   }
-
-  // slotInput kept for reference — slots now use TimePicker
 
   return (
     <div className="bg-card border border-border rounded-xl overflow-hidden">
@@ -462,6 +459,7 @@ function ScheduleEditor({ doctor, schedule, onSlotsChange, onSave, saving, saved
                               value={slot.start}
                               onChange={v => { const next = [...slots]; next[i] = { ...slot, start: v }; onSlotsChange(dayIdx, next) }}
                               minTime={clinicOpenTime}
+                              minTimeInclusive
                               maxTime={clinicCloseTime}
                               invalid={invalid}
                             />
@@ -491,7 +489,7 @@ function ScheduleEditor({ doctor, schedule, onSlotsChange, onSave, saving, saved
                       )
                     })}
                   </div>
-                  <button onClick={() => onSlotsChange(dayIdx, [...slots, { start: clinicOpenTime, end: clinicCloseTime }])}
+                  <button onClick={() => onSlotsChange(dayIdx, [...slots, { start: '', end: '' }])}
                     className="mt-2.5 flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors cursor-pointer">
                     <Plus size={12} />เพิ่มช่วงเวลา
                   </button>
