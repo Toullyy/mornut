@@ -10,7 +10,8 @@ import {
 } from '../api'
 import {
   getNotificationSettings, saveNotificationSettings, triggerRemindersNow,
-  type NotificationSettings,
+  getCoverageSettings, saveCoverageSettings,
+  type NotificationSettings, type CoverageSettings,
 } from '../api'
 import { SettingsSection, SettingsRow } from '../ui/SettingsLayout'
 import { Toggle } from '../ui/Toggle'
@@ -62,12 +63,12 @@ function LineOAConnectSection() {
         )}
 
         <div>
-          <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Channel Secret <span className="font-normal">(Line Secret ID)</span></label>
+          <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Channel Secret</label>
           <input type="password" value={secret} onChange={e => setSecret(e.target.value)}
             placeholder={s?.has_credentials ? '•••••••• (บันทึกไว้แล้ว)' : 'LINE channel secret'} className={`${fieldFull} font-mono`} />
         </div>
         <div>
-          <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Channel Access Token <span className="font-normal">(Line Token ID)</span></label>
+          <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Channel Access Token</label>
           <input type="password" value={token} onChange={e => setToken(e.target.value)}
             placeholder={s?.has_credentials ? s.masked_token || '•••••••• (บันทึกไว้แล้ว)' : 'LINE channel access token'} className={`${fieldFull} font-mono`} />
         </div>
@@ -90,7 +91,7 @@ function LineOAConnectSection() {
               <input type="text" value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)}
                 placeholder="https://your-backend/webhook" className={`${fieldFull} font-mono`} />
               <p className="text-[11px] text-muted-foreground mt-1.5">
-                ต้องเป็น URL สาธารณะแบบ HTTPS (เช่น ngrok หรือ Cloud Run) และลงท้ายด้วย <code>/webhook</code>
+                ต้องเป็น URL สาธารณะแบบ HTTPS และลงท้ายด้วย <code>/webhook</code>
               </p>
             </div>
             <div>
@@ -150,19 +151,41 @@ export function SettingsView() {
   const [triggerLoading, setTriggerLoading] = useState(false)
   const [triggerResult, setTriggerResult] = useState<string | null>(null)
 
+  // Notification settings
   const [reminderEnabled, setReminderEnabled] = useState(true)
   const [reminderTime, setReminderTime] = useState('18:00')
   const [reminderDaysBefore, setReminderDaysBefore] = useState('1')
   const [cancelTtl, setCancelTtl] = useState('15')
 
+  // Coverage settings
+  const [ssoEnabled, setSsoEnabled] = useState(true)
+  const [ssoDepositRequired, setSsoDepositRequired] = useState(false)
+  const [ssoDepositAmount, setSsoDepositAmount] = useState('0')
+  const [universalEnabled, setUniversalEnabled] = useState(true)
+  const [universalDepositRequired, setUniversalDepositRequired] = useState(false)
+  const [universalDepositAmount, setUniversalDepositAmount] = useState('0')
+  const [cashDepositRequired, setCashDepositRequired] = useState(false)
+  const [cashDepositAmount, setCashDepositAmount] = useState('0')
+
   useEffect(() => {
     if (!CLINIC_ID) { setLoadingSettings(false); return }
-    getNotificationSettings(CLINIC_ID)
-      .then(s => {
-        setReminderEnabled(s.reminder_enabled)
-        setReminderTime(s.reminder_time)
-        setReminderDaysBefore(String(s.reminder_days_before))
-        setCancelTtl(String(s.cancel_ttl_minutes))
+    Promise.all([
+      getNotificationSettings(CLINIC_ID),
+      getCoverageSettings(CLINIC_ID),
+    ])
+      .then(([notif, cov]: [NotificationSettings, CoverageSettings]) => {
+        setReminderEnabled(notif.reminder_enabled)
+        setReminderTime(notif.reminder_time)
+        setReminderDaysBefore(String(notif.reminder_days_before))
+        setCancelTtl(String(notif.cancel_ttl_minutes))
+        setSsoEnabled(cov.sso_enabled)
+        setSsoDepositRequired(cov.sso_deposit_required)
+        setSsoDepositAmount(String(cov.sso_deposit_amount))
+        setUniversalEnabled(cov.universal_enabled)
+        setUniversalDepositRequired(cov.universal_deposit_required)
+        setUniversalDepositAmount(String(cov.universal_deposit_amount))
+        setCashDepositRequired(cov.cash_deposit_required)
+        setCashDepositAmount(String(cov.cash_deposit_amount))
       })
       .catch(() => {})
       .finally(() => setLoadingSettings(false))
@@ -172,13 +195,24 @@ export function SettingsView() {
     if (!CLINIC_ID) return
     setSaving(true); setSaveError(''); setSaveOk(false)
     try {
-      const data: Partial<NotificationSettings> = {
-        reminder_enabled: reminderEnabled,
-        reminder_time: reminderTime,
-        reminder_days_before: Number(reminderDaysBefore),
-        cancel_ttl_minutes: Number(cancelTtl),
-      }
-      await saveNotificationSettings(CLINIC_ID, data)
+      await Promise.all([
+        saveNotificationSettings(CLINIC_ID, {
+          reminder_enabled: reminderEnabled,
+          reminder_time: reminderTime,
+          reminder_days_before: Number(reminderDaysBefore),
+          cancel_ttl_minutes: Number(cancelTtl),
+        }),
+        saveCoverageSettings(CLINIC_ID, {
+          sso_enabled: ssoEnabled,
+          sso_deposit_required: ssoDepositRequired,
+          sso_deposit_amount: Number(ssoDepositAmount),
+          universal_enabled: universalEnabled,
+          universal_deposit_required: universalDepositRequired,
+          universal_deposit_amount: Number(universalDepositAmount),
+          cash_deposit_required: cashDepositRequired,
+          cash_deposit_amount: Number(cashDepositAmount),
+        }),
+      ])
       setSaveOk(true)
       setTimeout(() => setSaveOk(false), 3000)
     } catch (e) {
@@ -208,6 +242,14 @@ export function SettingsView() {
       </div>
     )
   }
+
+  const depositInput = (value: string, onChange: (v: string) => void) => (
+    <div className="flex items-center gap-1.5">
+      <span className="text-sm text-muted-foreground">฿</span>
+      <input type="number" value={value} onChange={e => onChange(e.target.value)} min={0}
+        className={`${numInput} w-28`} />
+    </div>
+  )
 
   return (
     <div className="flex flex-col gap-5">
@@ -256,20 +298,55 @@ export function SettingsView() {
       </SettingsSection>
 
       <SettingsSection title="ประกันสังคม (SSO)" icon={<ShieldCheck size={16} />}>
-        <div className="pt-2">
-          <p className="text-xs text-muted-foreground py-3 text-center">การตั้งค่าสิทธิ์จะเปิดให้ใช้งานในเวอร์ชันถัดไป</p>
+        <div className="pt-2 flex flex-col gap-1">
+          <SettingsRow label="เปิดรับสิทธิ์ประกันสังคม" hint="ผู้ป่วยสามารถเลือกสิทธิ์นี้เมื่อจองคิว">
+            <Toggle checked={ssoEnabled} onChange={setSsoEnabled} />
+          </SettingsRow>
+          {ssoEnabled && (
+            <>
+              <SettingsRow label="เรียกเก็บมัดจำ" hint="กำหนดให้ผู้ป่วยสิทธิ์นี้ต้องชำระมัดจำ">
+                <Toggle checked={ssoDepositRequired} onChange={setSsoDepositRequired} />
+              </SettingsRow>
+              {ssoDepositRequired && (
+                <SettingsRow label="จำนวนมัดจำ (บาท)" hint="ยอดมัดจำที่ต้องชำระผ่านสลิป">
+                  {depositInput(ssoDepositAmount, setSsoDepositAmount)}
+                </SettingsRow>
+              )}
+            </>
+          )}
         </div>
       </SettingsSection>
 
       <SettingsSection title="บัตรทอง (Universal Coverage)" icon={<CreditCard size={16} />}>
-        <div className="pt-2">
-          <p className="text-xs text-muted-foreground py-3 text-center">การตั้งค่าสิทธิ์จะเปิดให้ใช้งานในเวอร์ชันถัดไป</p>
+        <div className="pt-2 flex flex-col gap-1">
+          <SettingsRow label="เปิดรับสิทธิ์บัตรทอง" hint="ผู้ป่วยสามารถเลือกสิทธิ์นี้เมื่อจองคิว">
+            <Toggle checked={universalEnabled} onChange={setUniversalEnabled} />
+          </SettingsRow>
+          {universalEnabled && (
+            <>
+              <SettingsRow label="เรียกเก็บมัดจำ" hint="กำหนดให้ผู้ป่วยสิทธิ์นี้ต้องชำระมัดจำ">
+                <Toggle checked={universalDepositRequired} onChange={setUniversalDepositRequired} />
+              </SettingsRow>
+              {universalDepositRequired && (
+                <SettingsRow label="จำนวนมัดจำ (บาท)" hint="ยอดมัดจำที่ต้องชำระผ่านสลิป">
+                  {depositInput(universalDepositAmount, setUniversalDepositAmount)}
+                </SettingsRow>
+              )}
+            </>
+          )}
         </div>
       </SettingsSection>
 
       <SettingsSection title="เงินสด (Cash)" icon={<FileText size={16} />}>
-        <div className="pt-2">
-          <p className="text-xs text-muted-foreground py-3 text-center">การตั้งค่าสิทธิ์จะเปิดให้ใช้งานในเวอร์ชันถัดไป</p>
+        <div className="pt-2 flex flex-col gap-1">
+          <SettingsRow label="เรียกเก็บมัดจำสำหรับเงินสด" hint="กำหนดให้ผู้ป่วยชำระเงินสดต้องส่งสลิปมัดจำ">
+            <Toggle checked={cashDepositRequired} onChange={setCashDepositRequired} />
+          </SettingsRow>
+          {cashDepositRequired && (
+            <SettingsRow label="จำนวนมัดจำ (บาท)" hint="ยอดมัดจำสำหรับเงินสด">
+              {depositInput(cashDepositAmount, setCashDepositAmount)}
+            </SettingsRow>
+          )}
         </div>
       </SettingsSection>
 

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   AlertCircle, CalendarDays, CheckCircle2,
-  ChevronRight, ChevronUp, ChevronDown, Clock, Phone, Plus, RefreshCw, Search, X, XCircle,
+  ChevronRight, ChevronUp, ChevronDown, Clock, Download, Phone, Plus, Printer, RefreshCw, Search, X, XCircle,
 } from 'lucide-react'
 import { DatePicker } from '../DatePicker'
 import {
@@ -421,6 +421,62 @@ export function DashboardView({
     weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', calendar: 'buddhist',
   })
 
+  const STATUS_TH: Record<string, string> = {
+    pending_slip: 'รอสลิป', confirmed: 'ยืนยัน', reminded: 'แจ้งเตือน',
+    done: 'เสร็จ', no_show: 'ไม่มา', cancelled: 'ยกเลิก',
+  }
+  const COVERAGE_TH: Record<string, string> = { cash: 'เงินสด', sso: 'ประกันสังคม', universal: 'บัตรทอง' }
+
+  function handleExportCSV() {
+    const header = 'เวลา,ชื่อผู้ป่วย,เบอร์โทร,บริการ,สิทธิ์,มัดจำ,สถานะ'
+    const rows = sorted.map(b =>
+      [b.time, b.patient_name, b.phone, b.service_name,
+        COVERAGE_TH[b.coverage] ?? b.coverage,
+        b.deposit_amount > 0 ? b.deposit_amount : '',
+        STATUS_TH[b.status] ?? b.status,
+      ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')
+    )
+    const bom = '﻿'
+    const blob = new Blob([bom + [header, ...rows].join('\n')], { type: 'text/csv;charset=utf-8;' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `queue-${date}.csv`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+
+  function handlePrint() {
+    const rows = sorted.map(b => `
+      <tr>
+        <td>${b.time}</td>
+        <td>${b.patient_name}</td>
+        <td>${b.phone}</td>
+        <td>${b.service_name}</td>
+        <td>${COVERAGE_TH[b.coverage] ?? b.coverage}</td>
+        <td>${b.deposit_amount > 0 ? `฿${b.deposit_amount.toLocaleString()}` : '—'}</td>
+        <td>${STATUS_TH[b.status] ?? b.status}</td>
+      </tr>`).join('')
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+      <title>ตารางคิว ${todayLabel}</title>
+      <style>
+        body { font-family: 'Noto Sans Thai', sans-serif; font-size: 12px; }
+        h2 { margin: 0 0 12px; font-size: 16px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+        th { background: #f0fdf4; font-weight: 600; }
+        @media print { @page { margin: 16mm; } }
+      </style></head><body>
+      <h2>ตารางคิว — ${todayLabel}</h2>
+      <table><thead><tr>
+        <th>เวลา</th><th>ชื่อผู้ป่วย</th><th>เบอร์โทร</th>
+        <th>บริการ</th><th>สิทธิ์</th><th>มัดจำ</th><th>สถานะ</th>
+      </tr></thead><tbody>${rows}</tbody></table>
+      <script>window.onload=()=>{window.print();window.close()}<\/script>
+      </body></html>`
+    const w = window.open('', '_blank', 'width=900,height=700')
+    if (w) { w.document.write(html); w.document.close() }
+  }
+
   return (
     <div className="flex flex-col gap-5">
       {/* Header */}
@@ -436,6 +492,14 @@ export function DashboardView({
           <button onClick={onRefresh}
             className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground border border-border px-3 py-2 rounded-lg hover:bg-muted transition-colors cursor-pointer">
             <RefreshCw size={13} />รีเฟรช
+          </button>
+          <button onClick={handleExportCSV} disabled={sorted.length === 0}
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground border border-border px-3 py-2 rounded-lg hover:bg-muted disabled:opacity-40 transition-colors cursor-pointer">
+            <Download size={13} />CSV
+          </button>
+          <button onClick={handlePrint} disabled={sorted.length === 0}
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground border border-border px-3 py-2 rounded-lg hover:bg-muted disabled:opacity-40 transition-colors cursor-pointer">
+            <Printer size={13} />พิมพ์
           </button>
           <button onClick={onAddQueue}
             className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors cursor-pointer">

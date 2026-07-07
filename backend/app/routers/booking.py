@@ -1,3 +1,4 @@
+import asyncio
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -5,10 +6,18 @@ from fastapi import APIRouter, Depends
 from app.core.security import get_line_user_id
 from app.models.booking import BookingCreate, BookingOut, BookingUpdate
 from app.services import booking_service
+from app.services import database as repo
 
 router = APIRouter()
 
 LineUserId = Annotated[str, Depends(get_line_user_id)]
+
+
+@router.get("/mine", response_model=list[BookingOut])
+async def get_my_bookings(line_user_id: LineUserId) -> list[BookingOut]:
+    """Return upcoming confirmed/reminded bookings for the authenticated LINE user."""
+    rows = await asyncio.to_thread(repo.get_patient_bookings, line_user_id)
+    return [booking_service._to_out(r) for r in rows]
 
 
 @router.post("", response_model=BookingOut, status_code=201)

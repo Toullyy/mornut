@@ -5,6 +5,9 @@ from app.core.db import cursor, get_conn
 _CLINIC_SETTINGS_FIELDS = (
     "name", "address", "phone", "open_time", "close_time",
     "reminder_enabled", "reminder_days_before", "reminder_time", "cancel_ttl_minutes",
+    "sso_enabled", "sso_deposit_required", "sso_deposit_amount",
+    "universal_enabled", "universal_deposit_required", "universal_deposit_amount",
+    "cash_deposit_required", "cash_deposit_amount",
 )
 
 

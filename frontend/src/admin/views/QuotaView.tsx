@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Save } from 'lucide-react'
-import { apiFetch } from '../../lib/api'
-import { setQuota, type QuotaLimits } from '../api'
+import { fetchQuota, setQuota, type QuotaLimits } from '../api'
 import { CLINIC_ID } from '../types'
 
 export function QuotaView({ date }: { date: string }) {
@@ -14,9 +13,7 @@ export function QuotaView({ date }: { date: string }) {
   const loadQuota = async () => {
     if (!CLINIC_ID) return
     try {
-      const data = await apiFetch<{ cash?: { limit: number }; sso?: { limit: number }; universal?: { limit: number } }>(
-        `/quotas/${CLINIC_ID}/${date}`,
-      )
+      const data = await fetchQuota(CLINIC_ID, date)
       setQuotaValues({
         cash: data.cash?.limit ?? 10,
         sso: data.sso?.limit ?? 8,

@@ -9,7 +9,7 @@ periodic sweep that hands timed-out admin conversations back to AI.
 import asyncio
 
 from linebot.v3.webhook import Event, MessageEvent
-from linebot.v3.webhooks import FollowEvent, TextMessageContent
+from linebot.v3.webhooks import FollowEvent, ImageMessageContent, TextMessageContent
 
 from app.core.config import settings
 from app.services import ai_chat
@@ -33,10 +33,10 @@ async def dispatch(events: list[Event]) -> None:
     for event in events:
         if isinstance(event, FollowEvent):
             await _on_follow(event)
-        elif isinstance(event, MessageEvent) and isinstance(
-            event.message, TextMessageContent
-        ):
+        elif isinstance(event, MessageEvent) and isinstance(event.message, TextMessageContent):
             await _on_text(event)
+        elif isinstance(event, MessageEvent) and isinstance(event.message, ImageMessageContent):
+            await _on_image(event)
 
 
 async def _on_follow(event: FollowEvent) -> None:
@@ -140,6 +140,35 @@ async def _generate_ai_reply(line_user_id: str, clinic_id: str, text: str) -> st
         except Exception as e:
             print(f"[WEBHOOK] send_line_notify failed (non-fatal): {e}")
     return reply
+
+
+async def _on_image(event: MessageEvent) -> None:
+    """Record that a patient sent an image. Mark conversation needs attention so
+    admin gets alerted — we can't auto-process arbitrary images."""
+    line_user_id = event.source.user_id
+
+    convo = await asyncio.to_thread(repo.get_conversation, line_user_id)
+    if convo is None:
+        profile = await get_profile(line_user_id)
+        await asyncio.to_thread(
+            repo.get_or_create_conversation,
+            line_user_id,
+            settings.clinic_id,
+            profile.get("displayName", ""),
+            profile.get("pictureUrl", ""),
+        )
+
+    await asyncio.to_thread(repo.record_inbound_message, line_user_id, "[ส่งรูปภาพ]")
+    await asyncio.to_thread(repo.set_needs_attention, line_user_id, True)
+
+    try:
+        await send_line_notify(f"[รูปภาพ] จาก {line_user_id} — กรุณาตรวจสอบในหน้า Chat")
+    except Exception as e:
+        print(f"[WEBHOOK] image notify failed (non-fatal): {e}")
+
+    reply = "ได้รับรูปภาพของคุณแล้ว เจ้าหน้าที่จะตรวจสอบและติดต่อกลับโดยเร็ว 🙏"
+    await reply_text(event.reply_token, reply)
+    await asyncio.to_thread(repo.record_outbound_message, line_user_id, "ai", reply)
 
 
 async def check_admin_timeouts() -> int:

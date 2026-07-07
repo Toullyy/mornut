@@ -283,6 +283,23 @@ def mark_reminded(booking_id: str) -> None:
             )
 
 
+def cancel_expired_pending_slip(clinic_id: str, ttl_minutes: int) -> list[dict]:
+    """Cancel every pending_slip booking older than ttl_minutes. Returns cancelled rows."""
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                """
+                UPDATE bookings SET status = 'cancelled', updated_at = NOW()
+                WHERE clinic_id = %s
+                  AND status = 'pending_slip'
+                  AND created_at < NOW() - (%s * INTERVAL '1 minute')
+                RETURNING id, patient_line_id, patient_name, service_name, date, time
+                """,
+                (clinic_id, ttl_minutes),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+
 def get_patient_bookings(patient_line_id: str) -> list[dict]:
     """Return upcoming (confirmed/reminded) bookings for a LINE user."""
     with get_conn() as conn:

@@ -22,6 +22,14 @@ def ensure_schema() -> None:
                     reminder_days_before  INT     NOT NULL DEFAULT 1,
                     reminder_time         TEXT    NOT NULL DEFAULT '18:00',
                     cancel_ttl_minutes    INT     NOT NULL DEFAULT 15,
+                    sso_enabled           BOOLEAN NOT NULL DEFAULT TRUE,
+                    sso_deposit_required  BOOLEAN NOT NULL DEFAULT FALSE,
+                    sso_deposit_amount    NUMERIC(10,2) NOT NULL DEFAULT 0,
+                    universal_enabled     BOOLEAN NOT NULL DEFAULT TRUE,
+                    universal_deposit_required BOOLEAN NOT NULL DEFAULT FALSE,
+                    universal_deposit_amount   NUMERIC(10,2) NOT NULL DEFAULT 0,
+                    cash_deposit_required BOOLEAN NOT NULL DEFAULT FALSE,
+                    cash_deposit_amount   NUMERIC(10,2) NOT NULL DEFAULT 0,
                     updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
                 """
@@ -31,6 +39,14 @@ def ensure_schema() -> None:
                 ("reminder_days_before", "INT     NOT NULL DEFAULT 1"),
                 ("reminder_time",        "TEXT    NOT NULL DEFAULT '18:00'"),
                 ("cancel_ttl_minutes",   "INT     NOT NULL DEFAULT 15"),
+                ("sso_enabled",          "BOOLEAN NOT NULL DEFAULT TRUE"),
+                ("sso_deposit_required", "BOOLEAN NOT NULL DEFAULT FALSE"),
+                ("sso_deposit_amount",   "NUMERIC(10,2) NOT NULL DEFAULT 0"),
+                ("universal_enabled",    "BOOLEAN NOT NULL DEFAULT TRUE"),
+                ("universal_deposit_required", "BOOLEAN NOT NULL DEFAULT FALSE"),
+                ("universal_deposit_amount",   "NUMERIC(10,2) NOT NULL DEFAULT 0"),
+                ("cash_deposit_required","BOOLEAN NOT NULL DEFAULT FALSE"),
+                ("cash_deposit_amount",  "NUMERIC(10,2) NOT NULL DEFAULT 0"),
             ]:
                 cur.execute(
                     f"ALTER TABLE clinic_settings ADD COLUMN IF NOT EXISTS {col} {definition}"

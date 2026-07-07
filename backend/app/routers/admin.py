@@ -114,7 +114,22 @@ async def update_booking_status(
     _admin: AdminUser = None,
 ) -> None:
     if body.status == "cancelled":
+        row = await asyncio.to_thread(repo.get_booking, booking_id)
         await asyncio.to_thread(repo.cancel_booking, booking_id)
+        if row:
+            line_id = row.get("patient_line_id", "")
+            if line_id and line_id != "walk-in":
+                try:
+                    await line_service.push_booking_cancelled(
+                        user_id=line_id,
+                        booking_id=booking_id,
+                        patient_name=row.get("patient_name", ""),
+                        date=str(row.get("date", "")),
+                        time=str(row.get("time", ""))[:5],
+                        service_name=row.get("service_name", ""),
+                    )
+                except Exception as e:
+                    print(f"[ADMIN] cancel push failed (non-fatal): {e}")
     else:
         await asyncio.to_thread(repo.update_booking, booking_id, {"status": "done"})
 
@@ -259,6 +274,66 @@ async def trigger_reminders_now(
     cid = clinic_id or settings.clinic_id
     count = await reminder_service.send_reminders_from_settings(cid)
     return {"reminders_sent": count}
+
+
+# ── Coverage / insurance settings ────────────────────────────────────────────
+
+class CoverageSettingsOut(BaseModel):
+    sso_enabled: bool = True
+    sso_deposit_required: bool = False
+    sso_deposit_amount: float = 0.0
+    universal_enabled: bool = True
+    universal_deposit_required: bool = False
+    universal_deposit_amount: float = 0.0
+    cash_deposit_required: bool = False
+    cash_deposit_amount: float = 0.0
+
+
+class CoverageSettingsUpdate(BaseModel):
+    sso_enabled: Optional[bool] = None
+    sso_deposit_required: Optional[bool] = None
+    sso_deposit_amount: Optional[float] = None
+    universal_enabled: Optional[bool] = None
+    universal_deposit_required: Optional[bool] = None
+    universal_deposit_amount: Optional[float] = None
+    cash_deposit_required: Optional[bool] = None
+    cash_deposit_amount: Optional[float] = None
+
+
+def _row_to_coverage_settings(row: dict | None) -> CoverageSettingsOut:
+    r = row or {}
+    return CoverageSettingsOut(
+        sso_enabled=r.get("sso_enabled", True),
+        sso_deposit_required=r.get("sso_deposit_required", False),
+        sso_deposit_amount=float(r.get("sso_deposit_amount", 0)),
+        universal_enabled=r.get("universal_enabled", True),
+        universal_deposit_required=r.get("universal_deposit_required", False),
+        universal_deposit_amount=float(r.get("universal_deposit_amount", 0)),
+        cash_deposit_required=r.get("cash_deposit_required", False),
+        cash_deposit_amount=float(r.get("cash_deposit_amount", 0)),
+    )
+
+
+@router.get("/coverage-settings", response_model=CoverageSettingsOut)
+async def get_coverage_settings(
+    clinic_id: str = "",
+    _admin: AdminUser = None,
+) -> CoverageSettingsOut:
+    cid = clinic_id or settings.clinic_id
+    row = await asyncio.to_thread(repo.get_clinic_settings, cid)
+    return _row_to_coverage_settings(row)
+
+
+@router.put("/coverage-settings", response_model=CoverageSettingsOut)
+async def update_coverage_settings(
+    body: CoverageSettingsUpdate,
+    clinic_id: str = "",
+    _admin: AdminUser = None,
+) -> CoverageSettingsOut:
+    cid = clinic_id or settings.clinic_id
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    row = await asyncio.to_thread(repo.upsert_clinic_settings, cid, **fields)
+    return _row_to_coverage_settings(row)
 
 
 # ── Services ──────────────────────────────────────────────────────────────────

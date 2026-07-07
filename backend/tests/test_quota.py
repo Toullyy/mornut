@@ -8,7 +8,7 @@ _QUOTA_RAW = {
 
 
 def test_get_quota(client):
-    with patch("app.services.firestore.get_quota", return_value=_QUOTA_RAW):
+    with patch("app.services.database.get_quota", return_value=_QUOTA_RAW):
         resp = client.get("/quotas/clinic-001/2026-07-10")
     assert resp.status_code == 200
     data = resp.json()
@@ -20,7 +20,7 @@ def test_get_quota(client):
 
 
 def test_set_quota_success(client):
-    with patch("app.services.firestore.update_quota_limits") as mock_fn:
+    with patch("app.services.database.update_quota_limits") as mock_fn:
         resp = client.put(
             "/quotas/clinic-001/2026-07-10",
             json={"cash": 12, "sso": 6, "universal": 6},

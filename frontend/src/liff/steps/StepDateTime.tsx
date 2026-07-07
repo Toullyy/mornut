@@ -24,10 +24,16 @@ export default function StepDateTime({ clinicId, onSelect, onBack }: Props) {
     setSelectedTime('')
     setSlotError(null)
     setLoadingSlots(true)
-    getSlots(clinicId, date)
-      .then(setSlots)
-      .catch((e: Error) => setSlotError(e.message))
-      .finally(() => setLoadingSlots(false))
+
+    const load = () =>
+      getSlots(clinicId, date)
+        .then(setSlots)
+        .catch((e: Error) => setSlotError(e.message))
+        .finally(() => setLoadingSlots(false))
+
+    load()
+    const interval = setInterval(load, 30_000)
+    return () => clearInterval(interval)
   }, [clinicId, date])
 
   const canProceed = Boolean(date && selectedTime)

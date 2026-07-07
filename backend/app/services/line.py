@@ -136,6 +136,63 @@ async def push_booking_confirmed(
     await push_flex(user_id, "ยืนยันการจอง", contents)  # ยืนยันการจอง
 
 
+async def push_booking_cancelled(
+    user_id: str,
+    booking_id: str,
+    patient_name: str,
+    date: str,
+    time: str,
+    service_name: str,
+) -> None:
+    """Push a Flex Message informing the patient their booking was cancelled by the clinic."""
+    short_id = booking_id[-8:].upper()
+    contents = {
+        "type": "bubble",
+        "size": "kilo",
+        "header": {
+            "type": "box",
+            "layout": "vertical",
+            "backgroundColor": "#EF4444",
+            "paddingAll": "16px",
+            "contents": [
+                {
+                    "type": "text",
+                    "text": "❌ การจองถูกยกเลิก",
+                    "color": "#ffffff",
+                    "weight": "bold",
+                    "size": "lg",
+                }
+            ],
+        },
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "spacing": "sm",
+            "paddingAll": "16px",
+            "contents": [
+                _row("ชื่อ", patient_name),
+                _row("บริการ", service_name),
+                _row("วันที่", date),
+                _row("เวลา", f"{time} น."),
+                _row("รหัส", short_id),
+                {
+                    "type": "separator",
+                    "margin": "md",
+                },
+                {
+                    "type": "text",
+                    "text": "หากต้องการจองใหม่ พิมพ์ 'จอง' หรือกดปุ่มในเมนูด้านล่าง",
+                    "size": "xs",
+                    "color": "#6B7280",
+                    "wrap": True,
+                    "margin": "md",
+                },
+            ],
+        },
+    }
+    await push_flex(user_id, f"การจองถูกยกเลิก — {date} เวลา {time} น.", contents)
+
+
 async def push_appointment_reminder(
     user_id: str,
     booking_id: str,

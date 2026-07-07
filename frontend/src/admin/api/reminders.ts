@@ -87,3 +87,28 @@ export function triggerRemindersNow(clinicId: string): Promise<{ reminders_sent:
     { method: 'POST' },
   )
 }
+
+export interface CoverageSettings {
+  sso_enabled: boolean
+  sso_deposit_required: boolean
+  sso_deposit_amount: number
+  universal_enabled: boolean
+  universal_deposit_required: boolean
+  universal_deposit_amount: number
+  cash_deposit_required: boolean
+  cash_deposit_amount: number
+}
+
+export function getCoverageSettings(clinicId: string): Promise<CoverageSettings> {
+  return apiFetch<CoverageSettings>(`/admin/coverage-settings?clinic_id=${clinicId}`)
+}
+
+export function saveCoverageSettings(
+  clinicId: string,
+  data: Partial<CoverageSettings>,
+): Promise<CoverageSettings> {
+  return apiFetch<CoverageSettings>(`/admin/coverage-settings?clinic_id=${clinicId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  })
+}

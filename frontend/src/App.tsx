@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import DashboardPage from './admin/DashboardPage'
 import BookingPage from './liff/BookingPage'
+import MyQueuePage from './liff/MyQueuePage'
 
 export default function App() {
   return (
@@ -8,6 +9,7 @@ export default function App() {
       <Routes>
         {/* LIFF: opened by LINE in-app browser */}
         <Route path="/book" element={<BookingPage />} />
+        <Route path="/my-queue" element={<MyQueuePage />} />
 
         {/* Admin: desktop browser dashboard */}
         <Route path="/admin" element={<DashboardPage />} />

@@ -12,6 +12,7 @@ from .bookings import (
     get_confirmed_bookings_for_date,
     mark_reminded,
     get_patient_bookings,
+    cancel_expired_pending_slip,
 )
 from .slots import (
     get_slots,
@@ -72,7 +73,7 @@ __all__ = [
     "get_booking", "list_bookings", "list_bookings_range", "list_all_bookings",
     "list_all_bookings_paged", "create_booking", "update_booking", "cancel_booking",
     "create_admin_booking", "is_trans_ref_used", "get_confirmed_bookings_for_date",
-    "mark_reminded", "get_patient_bookings",
+    "mark_reminded", "get_patient_bookings", "cancel_expired_pending_slip",
     "get_slots", "get_quota", "set_quota", "update_quota_limits",
     "get_services", "create_service", "update_service", "delete_service",
     "get_doctors", "create_doctor", "update_doctor", "delete_doctor", "upsert_doctor_shifts",
