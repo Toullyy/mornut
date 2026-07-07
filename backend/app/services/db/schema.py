@@ -12,16 +12,29 @@ def ensure_schema() -> None:
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS clinic_settings (
-                    clinic_id  TEXT PRIMARY KEY,
-                    name       TEXT NOT NULL DEFAULT '',
-                    address    TEXT NOT NULL DEFAULT '',
-                    phone      TEXT NOT NULL DEFAULT '',
-                    open_time  TEXT NOT NULL DEFAULT '08:00',
-                    close_time TEXT NOT NULL DEFAULT '17:00',
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    clinic_id             TEXT PRIMARY KEY,
+                    name                  TEXT    NOT NULL DEFAULT '',
+                    address               TEXT    NOT NULL DEFAULT '',
+                    phone                 TEXT    NOT NULL DEFAULT '',
+                    open_time             TEXT    NOT NULL DEFAULT '08:00',
+                    close_time            TEXT    NOT NULL DEFAULT '17:00',
+                    reminder_enabled      BOOLEAN NOT NULL DEFAULT TRUE,
+                    reminder_days_before  INT     NOT NULL DEFAULT 1,
+                    reminder_time         TEXT    NOT NULL DEFAULT '18:00',
+                    cancel_ttl_minutes    INT     NOT NULL DEFAULT 15,
+                    updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
                 """
             )
+            for col, definition in [
+                ("reminder_enabled",     "BOOLEAN NOT NULL DEFAULT TRUE"),
+                ("reminder_days_before", "INT     NOT NULL DEFAULT 1"),
+                ("reminder_time",        "TEXT    NOT NULL DEFAULT '18:00'"),
+                ("cancel_ttl_minutes",   "INT     NOT NULL DEFAULT 15"),
+            ]:
+                cur.execute(
+                    f"ALTER TABLE clinic_settings ADD COLUMN IF NOT EXISTS {col} {definition}"
+                )
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS line_settings (

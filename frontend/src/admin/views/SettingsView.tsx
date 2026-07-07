@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react'
 import {
-  AlertCircle, CheckCircle2, CreditCard, FileText, KeyRound,
-  LayoutGrid, Link2, Loader2, MessageCircle, Save, Settings2,
+  AlertCircle, Bell, CheckCircle2, CreditCard, FileText, KeyRound,
+  LayoutGrid, Link2, Loader2, MessageCircle, Play, Save, Settings2,
   ShieldCheck, Trash2,
 } from 'lucide-react'
 import {
   getLineSettings, saveLineCredentials, enableWebhook,
   setupRichMenu, deleteRichMenu, type LineOASettings,
+} from '../api'
+import {
+  getNotificationSettings, saveNotificationSettings, triggerRemindersNow,
+  type NotificationSettings,
 } from '../api'
 import { SettingsSection, SettingsRow } from '../ui/SettingsLayout'
 import { Toggle } from '../ui/Toggle'
@@ -137,21 +141,73 @@ function LineOAConnectSection() {
 // ── Settings View ─────────────────────────────────────────────────────────────
 
 export function SettingsView() {
-  const [ssoEnabled, setSsoEnabled] = useState(true)
-  const [ssoDepositRequired, setSsoDepositRequired] = useState(true)
-  const [ssoDeposit, setSsoDeposit] = useState('200')
-  const [univEnabled, setUnivEnabled] = useState(true)
-  const [univDepositRequired, setUnivDepositRequired] = useState(false)
-  const [univDeposit, setUnivDeposit] = useState('0')
-  const [univRequireIdCard, setUnivRequireIdCard] = useState(true)
-  const [cashDepositRequired, setCashDepositRequired] = useState(true)
-  const [cashDeposit, setCashDeposit] = useState('300')
+  const numInput = 'w-24 text-sm font-mono bg-input-background border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-ring/30 text-right'
+
+  const [loadingSettings, setLoadingSettings] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const [saveOk, setSaveOk] = useState(false)
+  const [triggerLoading, setTriggerLoading] = useState(false)
+  const [triggerResult, setTriggerResult] = useState<string | null>(null)
+
   const [reminderEnabled, setReminderEnabled] = useState(true)
   const [reminderTime, setReminderTime] = useState('18:00')
   const [reminderDaysBefore, setReminderDaysBefore] = useState('1')
   const [cancelTtl, setCancelTtl] = useState('15')
 
-  const numInput = 'w-24 text-sm font-mono bg-input-background border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-ring/30 text-right'
+  useEffect(() => {
+    if (!CLINIC_ID) { setLoadingSettings(false); return }
+    getNotificationSettings(CLINIC_ID)
+      .then(s => {
+        setReminderEnabled(s.reminder_enabled)
+        setReminderTime(s.reminder_time)
+        setReminderDaysBefore(String(s.reminder_days_before))
+        setCancelTtl(String(s.cancel_ttl_minutes))
+      })
+      .catch(() => {})
+      .finally(() => setLoadingSettings(false))
+  }, [])
+
+  async function handleSave() {
+    if (!CLINIC_ID) return
+    setSaving(true); setSaveError(''); setSaveOk(false)
+    try {
+      const data: Partial<NotificationSettings> = {
+        reminder_enabled: reminderEnabled,
+        reminder_time: reminderTime,
+        reminder_days_before: Number(reminderDaysBefore),
+        cancel_ttl_minutes: Number(cancelTtl),
+      }
+      await saveNotificationSettings(CLINIC_ID, data)
+      setSaveOk(true)
+      setTimeout(() => setSaveOk(false), 3000)
+    } catch (e) {
+      setSaveError((e as Error).message || 'บันทึกไม่สำเร็จ')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleTriggerNow() {
+    if (!CLINIC_ID) return
+    setTriggerLoading(true); setTriggerResult(null)
+    try {
+      const res = await triggerRemindersNow(CLINIC_ID)
+      setTriggerResult(`ส่งแจ้งเตือนสำเร็จ ${res.reminders_sent} ราย`)
+    } catch (e) {
+      setTriggerResult(`เกิดข้อผิดพลาด: ${(e as Error).message}`)
+    } finally {
+      setTriggerLoading(false)
+    }
+  }
+
+  if (loadingSettings) {
+    return (
+      <div className="flex items-center justify-center py-20 text-muted-foreground text-sm gap-2">
+        <Loader2 size={16} className="animate-spin" />กำลังโหลด...
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -162,75 +218,14 @@ export function SettingsView() {
 
       <LineOAConnectSection />
 
-      <SettingsSection title="ประกันสังคม (SSO)" icon={<ShieldCheck size={16} />}>
-        <div className="pt-2">
-          <SettingsRow label="เปิดรับสิทธิ์ประกันสังคม" hint="อนุญาตให้ผู้ป่วยสิทธิ์ประกันสังคมจองคิวได้">
-            <Toggle checked={ssoEnabled} onChange={setSsoEnabled} />
-          </SettingsRow>
-          <SettingsRow label="เก็บมัดจำ" hint="กำหนดให้ผู้ป่วยประกันสังคมต้องชำระมัดจำก่อนยืนยัน">
-            <Toggle checked={ssoDepositRequired} onChange={setSsoDepositRequired} />
-          </SettingsRow>
-          {ssoDepositRequired && (
-            <SettingsRow label="จำนวนมัดจำ (บาท)" hint="ยอดที่ต้องโอนเพื่อล็อกคิว">
-              <div className="flex items-center gap-1.5">
-                <span className="text-sm text-muted-foreground">฿</span>
-                <input type="number" value={ssoDeposit} onChange={e => setSsoDeposit(e.target.value)} min={0} className={numInput} />
-              </div>
-            </SettingsRow>
-          )}
-        </div>
-      </SettingsSection>
-
-      <SettingsSection title="บัตรทอง (Universal Coverage)" icon={<CreditCard size={16} />}>
-        <div className="pt-2">
-          <SettingsRow label="เปิดรับสิทธิ์บัตรทอง" hint="อนุญาตให้ผู้ป่วยสิทธิ์บัตรทองจองคิวได้">
-            <Toggle checked={univEnabled} onChange={setUnivEnabled} />
-          </SettingsRow>
-          <SettingsRow label="เก็บมัดจำ" hint="บัตรทองปกติไม่เก็บมัดจำ แต่สามารถเปิดใช้ได้">
-            <Toggle checked={univDepositRequired} onChange={setUnivDepositRequired} />
-          </SettingsRow>
-          {univDepositRequired && (
-            <SettingsRow label="จำนวนมัดจำ (บาท)">
-              <div className="flex items-center gap-1.5">
-                <span className="text-sm text-muted-foreground">฿</span>
-                <input type="number" value={univDeposit} onChange={e => setUnivDeposit(e.target.value)} min={0} className={numInput} />
-              </div>
-            </SettingsRow>
-          )}
-          <SettingsRow label="กำหนดให้แนบบัตรประชาชน" hint="ขอภาพบัตรประชาชนเพื่อยืนยันสิทธิ์">
-            <Toggle checked={univRequireIdCard} onChange={setUnivRequireIdCard} />
-          </SettingsRow>
-        </div>
-      </SettingsSection>
-
-      <SettingsSection title="เงินสด (Cash)" icon={<FileText size={16} />}>
-        <div className="pt-2">
-          <SettingsRow label="เก็บมัดจำ" hint="กำหนดมัดจำสำหรับผู้ป่วยชำระเงินสด">
-            <Toggle checked={cashDepositRequired} onChange={setCashDepositRequired} />
-          </SettingsRow>
-          {cashDepositRequired && (
-            <SettingsRow label="จำนวนมัดจำ (บาท)">
-              <div className="flex items-center gap-1.5">
-                <span className="text-sm text-muted-foreground">฿</span>
-                <input type="number" value={cashDeposit} onChange={e => setCashDeposit(e.target.value)} min={0} className={numInput} />
-              </div>
-            </SettingsRow>
-          )}
-        </div>
-      </SettingsSection>
-
-      <SettingsSection title="อื่นๆ" icon={<Settings2 size={16} />}>
-        <div className="pt-2">
-          <SettingsRow label="แจ้งเตือนผู้ป่วยล่วงหน้า" hint="ส่ง LINE ข้อความเตือนก่อนวันนัด">
+      <SettingsSection title="การแจ้งเตือนนัดหมาย" icon={<Bell size={16} />}>
+        <div className="pt-2 flex flex-col gap-1">
+          <SettingsRow label="เปิดแจ้งเตือนผู้ป่วยล่วงหน้า" hint="ส่ง LINE ข้อความเตือนก่อนวันนัด">
             <Toggle checked={reminderEnabled} onChange={setReminderEnabled} />
           </SettingsRow>
           {reminderEnabled && (
             <>
-              <SettingsRow label="เวลาส่งแจ้งเตือน" hint="เวลาที่ระบบจะส่งข้อความเตือนทุกวัน">
-                <input type="time" value={reminderTime} onChange={e => setReminderTime(e.target.value)}
-                  className="text-sm font-mono bg-input-background border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-ring/30" />
-              </SettingsRow>
-              <SettingsRow label="แจ้งเตือนล่วงหน้า (วัน)">
+              <SettingsRow label="แจ้งเตือนล่วงหน้า (วัน)" hint="ระบบจะส่งแจ้งเตือนก่อนวันนัดกี่วัน">
                 <select value={reminderDaysBefore} onChange={e => setReminderDaysBefore(e.target.value)}
                   className="text-sm bg-input-background border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-ring/30">
                   <option value="1">1 วันก่อน</option>
@@ -238,21 +233,74 @@ export function SettingsView() {
                   <option value="3">3 วันก่อน</option>
                 </select>
               </SettingsRow>
+              <SettingsRow label="เวลาส่งแจ้งเตือน" hint="Cloud Scheduler จะเรียก API ตามเวลานี้ทุกวัน">
+                <input type="time" value={reminderTime} onChange={e => setReminderTime(e.target.value)}
+                  className="text-sm font-mono bg-input-background border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-ring/30" />
+              </SettingsRow>
+              <SettingsRow label="ส่งแจ้งเตือนตอนนี้" hint="ส่งข้อความ LINE ให้ผู้ป่วยที่มีนัดตาม window ที่กำหนดทันที">
+                <div className="flex items-center gap-2">
+                  <button onClick={handleTriggerNow} disabled={triggerLoading}
+                    className="flex items-center gap-1.5 border border-border text-foreground text-sm font-medium px-3 py-1.5 rounded-lg hover:bg-muted disabled:opacity-50 transition-colors cursor-pointer">
+                    {triggerLoading ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}ส่งเลย
+                  </button>
+                  {triggerResult && (
+                    <span className={`text-xs ${triggerResult.startsWith('เกิด') ? 'text-destructive' : 'text-primary'}`}>
+                      {triggerResult}
+                    </span>
+                  )}
+                </div>
+              </SettingsRow>
             </>
           )}
+        </div>
+      </SettingsSection>
+
+      <SettingsSection title="ประกันสังคม (SSO)" icon={<ShieldCheck size={16} />}>
+        <div className="pt-2">
+          <p className="text-xs text-muted-foreground py-3 text-center">การตั้งค่าสิทธิ์จะเปิดให้ใช้งานในเวอร์ชันถัดไป</p>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection title="บัตรทอง (Universal Coverage)" icon={<CreditCard size={16} />}>
+        <div className="pt-2">
+          <p className="text-xs text-muted-foreground py-3 text-center">การตั้งค่าสิทธิ์จะเปิดให้ใช้งานในเวอร์ชันถัดไป</p>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection title="เงินสด (Cash)" icon={<FileText size={16} />}>
+        <div className="pt-2">
+          <p className="text-xs text-muted-foreground py-3 text-center">การตั้งค่าสิทธิ์จะเปิดให้ใช้งานในเวอร์ชันถัดไป</p>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection title="อื่นๆ" icon={<Settings2 size={16} />}>
+        <div className="pt-2">
           <SettingsRow label="ยกเลิกคิวอัตโนมัติ (นาที)" hint="ยกเลิกคิวที่ค้างสถานะ 'รอสลิป' เกินเวลาที่กำหนด">
             <div className="flex items-center gap-1.5">
               <input type="number" value={cancelTtl} onChange={e => setCancelTtl(e.target.value)} min={5} max={60}
-                className="w-20 text-sm font-mono bg-input-background border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-ring/30 text-right" />
+                className={`${numInput} w-20`} />
               <span className="text-sm text-muted-foreground">นาที</span>
             </div>
           </SettingsRow>
         </div>
       </SettingsSection>
 
-      <div className="flex justify-end">
-        <button className="flex items-center gap-2 bg-primary text-primary-foreground font-medium px-5 py-2.5 rounded-lg hover:bg-primary/90 transition-colors text-sm cursor-pointer">
-          <Save size={14} />บันทึกการตั้งค่าทั้งหมด
+      {saveError && (
+        <p className="text-sm text-destructive flex items-center gap-1.5">
+          <AlertCircle size={14} />{saveError}
+        </p>
+      )}
+
+      <div className="flex justify-end items-center gap-3">
+        {saveOk && (
+          <p className="text-sm text-primary flex items-center gap-1.5">
+            <CheckCircle2 size={14} />บันทึกแล้ว
+          </p>
+        )}
+        <button onClick={handleSave} disabled={saving || !CLINIC_ID}
+          className="flex items-center gap-2 bg-primary text-primary-foreground font-medium px-5 py-2.5 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors text-sm cursor-pointer">
+          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+          {saving ? 'กำลังบันทึก...' : 'บันทึกการตั้งค่า'}
         </button>
       </div>
     </div>

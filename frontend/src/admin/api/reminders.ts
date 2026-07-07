@@ -59,3 +59,31 @@ export function updateBookingReminder(
     body: JSON.stringify(data),
   })
 }
+
+export interface NotificationSettings {
+  reminder_enabled: boolean
+  reminder_days_before: number
+  reminder_time: string
+  cancel_ttl_minutes: number
+}
+
+export function getNotificationSettings(clinicId: string): Promise<NotificationSettings> {
+  return apiFetch<NotificationSettings>(`/admin/notification-settings?clinic_id=${clinicId}`)
+}
+
+export function saveNotificationSettings(
+  clinicId: string,
+  data: Partial<NotificationSettings>,
+): Promise<NotificationSettings> {
+  return apiFetch<NotificationSettings>(`/admin/notification-settings?clinic_id=${clinicId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  })
+}
+
+export function triggerRemindersNow(clinicId: string): Promise<{ reminders_sent: number }> {
+  return apiFetch<{ reminders_sent: number }>(
+    `/admin/reminders/trigger-now?clinic_id=${clinicId}`,
+    { method: 'POST' },
+  )
+}

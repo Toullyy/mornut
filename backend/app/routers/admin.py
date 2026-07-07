@@ -23,6 +23,7 @@ from app.services import database as repo
 from app.services.booking_service import _to_out
 from app.services import line as line_service
 from app.services.line import connect_line_oa
+from app.services import reminder as reminder_service
 
 router = APIRouter()
 
@@ -200,6 +201,64 @@ async def update_clinic_settings(
         repo.upsert_clinic_settings, cid, **body.model_dump(exclude_none=True)
     )
     return _row_to_clinic_settings(cid, row)
+
+
+# ── Notification / reminder settings ─────────────────────────────────────────
+
+class NotificationSettingsOut(BaseModel):
+    reminder_enabled: bool = True
+    reminder_days_before: int = 1
+    reminder_time: str = "18:00"
+    cancel_ttl_minutes: int = 15
+
+
+class NotificationSettingsUpdate(BaseModel):
+    reminder_enabled: Optional[bool] = None
+    reminder_days_before: Optional[int] = None
+    reminder_time: Optional[str] = None
+    cancel_ttl_minutes: Optional[int] = None
+
+
+def _row_to_notification_settings(row: dict | None) -> NotificationSettingsOut:
+    return NotificationSettingsOut(
+        reminder_enabled=row.get("reminder_enabled", True) if row else True,
+        reminder_days_before=row.get("reminder_days_before", 1) if row else 1,
+        reminder_time=row.get("reminder_time", "18:00") if row else "18:00",
+        cancel_ttl_minutes=row.get("cancel_ttl_minutes", 15) if row else 15,
+    )
+
+
+@router.get("/notification-settings", response_model=NotificationSettingsOut)
+async def get_notification_settings(
+    clinic_id: str = "",
+    _admin: AdminUser = None,
+) -> NotificationSettingsOut:
+    cid = clinic_id or settings.clinic_id
+    row = await asyncio.to_thread(repo.get_clinic_settings, cid)
+    return _row_to_notification_settings(row)
+
+
+@router.put("/notification-settings", response_model=NotificationSettingsOut)
+async def update_notification_settings(
+    body: NotificationSettingsUpdate,
+    clinic_id: str = "",
+    _admin: AdminUser = None,
+) -> NotificationSettingsOut:
+    cid = clinic_id or settings.clinic_id
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    row = await asyncio.to_thread(repo.upsert_clinic_settings, cid, **fields)
+    return _row_to_notification_settings(row)
+
+
+@router.post("/reminders/trigger-now")
+async def trigger_reminders_now(
+    clinic_id: str = "",
+    _admin: AdminUser = None,
+) -> dict:
+    """Manually send appointment reminders for today's configured days_before window."""
+    cid = clinic_id or settings.clinic_id
+    count = await reminder_service.send_reminders_from_settings(cid)
+    return {"reminders_sent": count}
 
 
 # ── Services ──────────────────────────────────────────────────────────────────

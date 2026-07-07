@@ -2,7 +2,10 @@ from typing import Optional
 
 from app.core.db import cursor, get_conn
 
-_CLINIC_SETTINGS_FIELDS = ("name", "address", "phone", "open_time", "close_time")
+_CLINIC_SETTINGS_FIELDS = (
+    "name", "address", "phone", "open_time", "close_time",
+    "reminder_enabled", "reminder_days_before", "reminder_time", "cancel_ttl_minutes",
+)
 
 
 def get_admin_by_email(email: str) -> Optional[dict]:

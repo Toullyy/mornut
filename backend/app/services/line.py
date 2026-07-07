@@ -136,6 +136,65 @@ async def push_booking_confirmed(
     await push_flex(user_id, "ยืนยันการจอง", contents)  # ยืนยันการจอง
 
 
+async def push_appointment_reminder(
+    user_id: str,
+    booking_id: str,
+    patient_name: str,
+    date: str,
+    time: str,
+    service_name: str,
+    days_before: int = 1,
+) -> None:
+    """Push a Flex Message reminding the patient of their upcoming appointment."""
+    short_id = booking_id[-8:].upper()
+    when = "พรุ่งนี้" if days_before == 1 else f"อีก {days_before} วัน"
+    contents = {
+        "type": "bubble",
+        "size": "kilo",
+        "header": {
+            "type": "box",
+            "layout": "vertical",
+            "backgroundColor": "#F59E0B",
+            "paddingAll": "16px",
+            "contents": [
+                {
+                    "type": "text",
+                    "text": f"🔔 แจ้งเตือนนัดหมาย ({when})",
+                    "color": "#ffffff",
+                    "weight": "bold",
+                    "size": "md",
+                }
+            ],
+        },
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "spacing": "sm",
+            "paddingAll": "16px",
+            "contents": [
+                _row("ชื่อ", patient_name),
+                _row("บริการ", service_name),
+                _row("วันที่", date),
+                _row("เวลา", f"{time} น."),
+                _row("รหัส", short_id),
+                {
+                    "type": "separator",
+                    "margin": "md",
+                },
+                {
+                    "type": "text",
+                    "text": "กรุณาตรงเวลา หากไม่สะดวกกรุณาแจ้งยกเลิกล่วงหน้าด้วยนะคะ 🙏",
+                    "size": "xs",
+                    "color": "#6B7280",
+                    "wrap": True,
+                    "margin": "md",
+                },
+            ],
+        },
+    }
+    await push_flex(user_id, f"แจ้งเตือนนัดหมาย — {date} เวลา {time} น.", contents)
+
+
 async def send_line_notify(message: str) -> None:
     """POST to LINE Notify API to push a text message to the subscribed group."""
     async with httpx.AsyncClient(timeout=10.0) as client:
