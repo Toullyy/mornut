@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Activity, Bell, CalendarDays, Clock, ClipboardList,
-  LayoutDashboard, MapPin, MessageCircle, Search, Settings2,
+  LayoutDashboard, MapPin, MessageCircle, QrCode, Search, Settings2,
   ShieldCheck, Stethoscope, UserCheck, Users,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
@@ -19,6 +19,7 @@ import { BookingRemindersView } from './views/BookingRemindersView'
 import { ChatView } from './views/ChatView'
 import { ClinicSettingsView } from './views/ClinicSettingsView'
 import { SettingsView } from './views/SettingsView'
+import { QRCodeView } from './views/QRCodeView'
 
 function FullPage({ children }: { children: React.ReactNode }) {
   return (
@@ -89,6 +90,7 @@ export default function DashboardPage() {
     { id: 'chat', label: 'แชท', icon: <MessageCircle size={16} /> },
     { id: 'clinicSettings', label: 'ตั้งค่าคลินิก', icon: <MapPin size={16} /> },
     { id: 'settings', label: 'ตั้งค่าระบบ', icon: <ShieldCheck size={16} /> },
+    { id: 'qrcode', label: 'QR Code จองคิว', icon: <QrCode size={16} /> },
   ]
 
   return (
@@ -235,6 +237,7 @@ export default function DashboardPage() {
           {activeNav === 'chat' && <ChatView clinicId={CLINIC_ID} />}
           {activeNav === 'clinicSettings' && <ClinicSettingsView />}
           {activeNav === 'settings' && <SettingsView />}
+          {activeNav === 'qrcode' && <QRCodeView />}
         </div>
       </main>
     </div>

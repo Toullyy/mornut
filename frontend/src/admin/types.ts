@@ -10,6 +10,7 @@ export type NavItem =
   | 'chat'
   | 'clinicSettings'
   | 'settings'
+  | 'qrcode'
 
 export interface Booking {
   id: string
