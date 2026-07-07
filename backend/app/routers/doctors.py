@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.config import settings
 from app.core.security import get_admin_user
-from app.models.doctor import DoctorCreate, DoctorOut, DoctorUpdate, ShiftUpdate
+from app.models.doctor import DoctorCreate, DoctorOut, DoctorUpdate, TimeSlotUpdate
 from app.services import database as repo
 
 router = APIRouter()
@@ -60,7 +60,7 @@ async def delete_doctor(
 @router.put("/{doctor_id}/shifts", status_code=204)
 async def update_shifts(
     doctor_id: str,
-    shifts: list[ShiftUpdate],
+    shifts: list[TimeSlotUpdate],
     _admin: AdminUser = None,
 ) -> None:
     await asyncio.to_thread(

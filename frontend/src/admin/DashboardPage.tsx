@@ -39,6 +39,9 @@ import {
   Pencil,
   MapPin,
   Package,
+  Copy,
+  Clock3,
+  CalendarCheck2,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { apiFetch } from '../lib/api'
@@ -107,7 +110,8 @@ interface Booking {
   clinic_id: string
 }
 
-type ShiftState = { doctorId: string; day: string; morning: boolean; afternoon: boolean }
+type DaySlot = { start: string; end: string }
+type WeekSchedule = Record<number, DaySlot[]>  // day_of_week (0=Mon) → slots
 
 const CLINIC_ID =
   new URLSearchParams(window.location.search).get('clinicId') ||
@@ -802,6 +806,421 @@ function EditDoctorModal({
   )
 }
 
+// ── Doctor schedule helpers ────────────────────────────────────────────────
+
+const SLOT_PRESETS: Record<string, DaySlot[]> = {
+  morning:   [{ start: '08:00', end: '12:00' }],
+  afternoon: [{ start: '13:00', end: '17:00' }],
+  fullday:   [{ start: '08:00', end: '12:00' }, { start: '13:00', end: '17:00' }],
+}
+
+const PRESET_LABELS: Record<string, { th: string; hint: string }> = {
+  morning:   { th: 'เช้า',     hint: '08:00–12:00' },
+  afternoon: { th: 'บ่าย',     hint: '13:00–17:00' },
+  fullday:   { th: 'เต็มวัน', hint: '08:00–17:00' },
+}
+
+function apiShiftsToSchedule(shifts: { day_of_week: number; start: string; end: string }[]): WeekSchedule {
+  return shifts.reduce<WeekSchedule>((acc, s) => {
+    ;(acc[s.day_of_week] ??= []).push({ start: s.start, end: s.end })
+    return acc
+  }, {})
+}
+
+function scheduleToApiShifts(schedule: WeekSchedule) {
+  return Object.entries(schedule).flatMap(([day, slots]) =>
+    slots.map(s => ({ day_of_week: Number(day), start: s.start, end: s.end }))
+  )
+}
+
+// ── Doctor Card ────────────────────────────────────────────────────────────
+
+function DoctorCard({
+  doctor,
+  schedule,
+  selected,
+  onSelect,
+  onEdit,
+  confirmDelete,
+  onDeleteRequest,
+  onConfirmDelete,
+  onCancelDelete,
+}: {
+  doctor: ApiDoctor
+  schedule: WeekSchedule
+  selected: boolean
+  onSelect: () => void
+  onEdit: () => void
+  confirmDelete: boolean
+  onDeleteRequest: () => void
+  onConfirmDelete: () => void
+  onCancelDelete: () => void
+}) {
+  const jsDay = new Date().getDay()
+  const todayIdx = jsDay === 0 ? 6 : jsDay - 1
+  const todaySlots = schedule[todayIdx] ?? []
+  const workDays = Object.values(schedule).filter(s => s.length > 0).length
+
+  return (
+    <div
+      onClick={onSelect}
+      className={`bg-card border rounded-xl p-4 cursor-pointer transition-all hover:shadow-sm flex flex-col gap-3 ${
+        selected ? 'border-primary ring-2 ring-primary/20' : 'border-border hover:border-muted-foreground/30'
+      }`}
+    >
+      <div className="flex items-start gap-2.5">
+        <div className={`w-9 h-9 rounded-xl ${doctor.color} flex items-center justify-center text-white font-bold text-sm shrink-0`}>
+          {doctor.initials || doctor.name.substring(0, 2)}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-foreground truncate leading-tight">{doctor.name}</p>
+          <p className="text-xs text-muted-foreground mt-0.5 truncate">{doctor.specialty}</p>
+        </div>
+        <div className="flex items-center gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
+          <button
+            onClick={onEdit}
+            className="p-1.5 text-muted-foreground hover:text-primary hover:bg-muted rounded-lg transition-colors cursor-pointer"
+          >
+            <Pencil size={11} />
+          </button>
+          <button
+            onClick={onDeleteRequest}
+            className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-muted rounded-lg transition-colors cursor-pointer"
+          >
+            <Trash2 size={11} />
+          </button>
+        </div>
+      </div>
+
+      {confirmDelete && (
+        <div onClick={e => e.stopPropagation()} className="flex items-center gap-2 px-2.5 py-2 bg-rose-50 border border-rose-200 rounded-lg">
+          <span className="text-xs text-rose-700 flex-1">ลบแพทย์นี้?</span>
+          <button onClick={onConfirmDelete} className="text-[10px] font-semibold text-white bg-rose-600 px-2 py-1 rounded hover:bg-rose-700 transition-colors cursor-pointer">ยืนยัน</button>
+          <button onClick={onCancelDelete} className="text-[10px] text-muted-foreground hover:text-foreground cursor-pointer">ยกเลิก</button>
+        </div>
+      )}
+
+      {/* Today's schedule */}
+      <div>
+        <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5 flex items-center gap-1">
+          <Clock3 size={9} />วันนี้
+        </p>
+        {todaySlots.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {todaySlots.map((slot, i) => (
+              <span key={i} className="text-[11px] bg-primary/10 text-primary border border-primary/15 px-1.5 py-0.5 rounded font-medium">
+                {slot.start}–{slot.end}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[11px] text-muted-foreground/50">ไม่มีตาราง</p>
+        )}
+      </div>
+
+      {/* Week dots */}
+      <div className="flex items-center justify-between pt-2.5 border-t border-border">
+        <div className="flex gap-1">
+          {[0,1,2,3,4,5,6].map(d => {
+            const active = (schedule[d] ?? []).length > 0
+            return (
+              <div key={d} className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold transition-colors ${
+                active ? `${doctor.color} text-white` : 'bg-muted text-muted-foreground/40'
+              }`}>
+                {DAY_SHORT[d]}
+              </div>
+            )
+          })}
+        </div>
+        <span className="text-[11px] text-muted-foreground">{workDays} วัน/สป.</span>
+      </div>
+    </div>
+  )
+}
+
+// ── Schedule Editor ────────────────────────────────────────────────────────
+
+function ScheduleEditor({
+  doctor,
+  schedule,
+  onSlotsChange,
+  onSave,
+  saving,
+  saved,
+  error,
+}: {
+  doctor: ApiDoctor
+  schedule: WeekSchedule
+  onSlotsChange: (day: number, slots: DaySlot[]) => void
+  onSave: () => void
+  saving: boolean
+  saved: boolean
+  error: string
+}) {
+  const [expandedDay, setExpandedDay] = useState<number | null>(null)
+  const [selectedDays, setSelectedDays] = useState<Set<number>>(new Set())
+  const [copyDay, setCopyDay] = useState<number | null>(null)
+  const [copyTargets, setCopyTargets] = useState<Set<number>>(new Set())
+  const [bulkPreset, setBulkPreset] = useState<string>('morning')
+
+  function toggleSelectDay(day: number) {
+    setSelectedDays(prev => {
+      const next = new Set(prev)
+      if (next.has(day)) next.delete(day)
+      else next.add(day)
+      return next
+    })
+  }
+
+  function applyBulkPreset() {
+    const slots = SLOT_PRESETS[bulkPreset] ?? []
+    selectedDays.forEach(day => onSlotsChange(day, slots.map(s => ({ ...s }))))
+    setSelectedDays(new Set())
+  }
+
+  function executeCopy() {
+    const src = schedule[copyDay!] ?? []
+    copyTargets.forEach(t => onSlotsChange(t, src.map(s => ({ ...s }))))
+    setCopyDay(null)
+    setCopyTargets(new Set())
+  }
+
+  const slotInput = 'text-sm bg-input-background border border-border rounded-lg px-2 py-1.5 font-mono focus:outline-none focus:ring-2 focus:ring-ring/30 w-28'
+
+  return (
+    <div className="bg-card border border-border rounded-xl overflow-hidden">
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <div className={`w-8 h-8 rounded-lg ${doctor.color} flex items-center justify-center text-white font-bold text-xs shrink-0`}>
+            {doctor.initials || doctor.name.substring(0, 2)}
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-foreground">{doctor.name}</p>
+            <p className="text-xs text-muted-foreground">{doctor.specialty}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {error && <span className="text-xs text-destructive">{error}</span>}
+          <button
+            onClick={onSave}
+            disabled={saving}
+            className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors cursor-pointer"
+          >
+            <Save size={13} />
+            {saving ? 'กำลังบันทึก...' : saved ? 'บันทึกแล้ว ✓' : 'บันทึก'}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Bulk bar ── */}
+      {selectedDays.size > 0 && (
+        <div className="flex items-center gap-3 px-5 py-2.5 bg-primary/5 border-b border-primary/10 flex-wrap">
+          <span className="text-xs font-semibold text-primary">{selectedDays.size} วัน</span>
+          <div className="flex gap-1">
+            {Object.entries(PRESET_LABELS).map(([k, v]) => (
+              <button
+                key={k}
+                onClick={() => setBulkPreset(k)}
+                className={`text-[11px] px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                  bulkPreset === k
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted text-muted-foreground hover:bg-muted-foreground/20'
+                }`}
+              >
+                {v.th}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={applyBulkPreset}
+            className="text-xs font-semibold bg-primary text-primary-foreground px-3 py-1.5 rounded-lg hover:bg-primary/90 transition-colors cursor-pointer"
+          >
+            ใช้กับที่เลือก
+          </button>
+          <button
+            onClick={() => setSelectedDays(new Set())}
+            className="text-xs text-muted-foreground hover:text-foreground ml-auto cursor-pointer"
+          >
+            ยกเลิก
+          </button>
+        </div>
+      )}
+
+      {/* ── Day rows ── */}
+      <div className="divide-y divide-border">
+        {DAYS.map((dayName, dayIdx) => {
+          const slots = schedule[dayIdx] ?? []
+          const isExpanded = expandedDay === dayIdx
+          const isSelected = selectedDays.has(dayIdx)
+          const isCopySource = copyDay === dayIdx
+
+          return (
+            <div key={dayIdx} className={isExpanded ? 'bg-muted/20' : ''}>
+              {/* Row */}
+              <div className="flex items-center gap-3 px-5 py-3 min-h-[3rem]">
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => toggleSelectDay(dayIdx)}
+                  onClick={e => e.stopPropagation()}
+                  className="w-3.5 h-3.5 rounded accent-primary shrink-0 cursor-pointer"
+                />
+                <button
+                  onClick={() => setExpandedDay(isExpanded ? null : dayIdx)}
+                  className="w-20 text-left text-sm font-medium text-foreground hover:text-primary transition-colors cursor-pointer shrink-0"
+                >
+                  {dayName}
+                </button>
+                <div className="flex-1 flex items-center gap-1.5 flex-wrap min-w-0">
+                  {slots.length > 0 ? (
+                    slots.map((slot, i) => (
+                      <span
+                        key={i}
+                        className="inline-flex items-center text-[11px] bg-primary/10 text-primary border border-primary/15 px-2 py-0.5 rounded-md font-medium whitespace-nowrap"
+                      >
+                        {slot.start}–{slot.end}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-xs text-muted-foreground/40">—</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => { setCopyDay(isCopySource ? null : dayIdx); setCopyTargets(new Set()) }}
+                    className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg transition-colors cursor-pointer ${
+                      isCopySource ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                    }`}
+                  >
+                    <Copy size={10} />คัดลอก
+                  </button>
+                  <button
+                    onClick={() => setExpandedDay(isExpanded ? null : dayIdx)}
+                    className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg transition-colors cursor-pointer ${
+                      isExpanded ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                    }`}
+                  >
+                    <Pencil size={10} />แก้ไข
+                  </button>
+                </div>
+              </div>
+
+              {/* Copy target panel */}
+              {isCopySource && (
+                <div className="px-5 pb-3 flex items-center gap-2 flex-wrap border-t border-border/50 pt-2.5">
+                  <span className="text-[11px] text-muted-foreground font-medium">คัดลอกไปที่:</span>
+                  {DAYS.map((d, i) => i !== dayIdx && (
+                    <button
+                      key={i}
+                      onClick={() => setCopyTargets(prev => {
+                        const next = new Set(prev)
+                        if (next.has(i)) next.delete(i)
+                        else next.add(i)
+                        return next
+                      })}
+                      className={`text-[11px] px-2 py-0.5 rounded-md border transition-colors cursor-pointer ${
+                        copyTargets.has(i)
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border text-muted-foreground hover:border-muted-foreground/60'
+                      }`}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                  <button
+                    onClick={executeCopy}
+                    disabled={copyTargets.size === 0}
+                    className="text-[11px] font-semibold bg-primary text-primary-foreground px-3 py-0.5 rounded-lg disabled:opacity-40 hover:bg-primary/90 transition-colors cursor-pointer ml-1"
+                  >
+                    คัดลอก
+                  </button>
+                </div>
+              )}
+
+              {/* Inline slot editor */}
+              {isExpanded && (
+                <div className="px-5 pb-4 pt-1 border-t border-border/50">
+                  {/* Presets */}
+                  <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+                    <span className="text-[11px] text-muted-foreground font-medium mr-0.5">Preset:</span>
+                    {Object.entries(PRESET_LABELS).map(([k, v]) => (
+                      <button
+                        key={k}
+                        onClick={() => onSlotsChange(dayIdx, SLOT_PRESETS[k].map(s => ({ ...s })))}
+                        className="text-[11px] px-2.5 py-1 rounded-lg border border-border hover:border-primary hover:bg-primary/5 hover:text-primary text-muted-foreground transition-colors cursor-pointer"
+                      >
+                        {v.th} <span className="opacity-50">{v.hint}</span>
+                      </button>
+                    ))}
+                    {slots.length > 0 && (
+                      <button
+                        onClick={() => onSlotsChange(dayIdx, [])}
+                        className="ml-auto text-[11px] px-2.5 py-1 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-colors cursor-pointer flex items-center gap-1"
+                      >
+                        <X size={10} />ล้าง
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Slot inputs */}
+                  <div className="flex flex-col gap-2">
+                    {slots.map((slot, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <input
+                          type="time"
+                          value={slot.start}
+                          onChange={e => {
+                            const next = [...slots]
+                            next[i] = { ...slot, start: e.target.value }
+                            onSlotsChange(dayIdx, next)
+                          }}
+                          className={slotInput}
+                        />
+                        <span className="text-muted-foreground text-xs">–</span>
+                        <input
+                          type="time"
+                          value={slot.end}
+                          onChange={e => {
+                            const next = [...slots]
+                            next[i] = { ...slot, end: e.target.value }
+                            onSlotsChange(dayIdx, next)
+                          }}
+                          className={slotInput}
+                        />
+                        <button
+                          onClick={() => onSlotsChange(dayIdx, slots.filter((_, j) => j !== i))}
+                          className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors cursor-pointer"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={() => onSlotsChange(dayIdx, [...slots, { start: '09:00', end: '12:00' }])}
+                    className="mt-2.5 flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors cursor-pointer"
+                  >
+                    <Plus size={12} />เพิ่มช่วงเวลา
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Footer */}
+      <div className="px-5 py-3 border-t border-border bg-muted/20">
+        <p className="text-xs text-muted-foreground">
+          คลิก "แก้ไข" เพื่อตั้งเวลา · ☑ เลือกหลายวันเพื่อแก้ไขพร้อมกัน · "คัดลอก" เพื่อทำซ้ำไปวันอื่น
+        </p>
+      </div>
+    </div>
+  )
+}
+
 // ── Views ──────────────────────────────────────────────────────────────────
 
 function DashboardView({ bookings, loading, error, onAction, actionLoading, date, onDateChange, onAddQueue, onRefresh }: {
@@ -1171,30 +1590,25 @@ function QuotaView({ date }: { date: string }) {
 
 function DoctorsView({ clinicId }: { clinicId: string }) {
   const [doctorList, setDoctorList] = useState<ApiDoctor[]>([])
-  const [shifts, setShifts] = useState<ShiftState[]>([])
+  const [schedules, setSchedules] = useState<Record<string, WeekSchedule>>({})
   const [loadingDoctors, setLoadingDoctors] = useState(true)
   const [selectedDoctor, setSelectedDoctor] = useState<string | null>(null)
   const [showAddDoctor, setShowAddDoctor] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
-  const [savingShifts, setSavingShifts] = useState(false)
-  const [shiftsSaved, setShiftsSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
   const [shiftError, setShiftError] = useState('')
-  const [confirmSave, setConfirmSave] = useState(false)
   const [editingDoctor, setEditingDoctor] = useState<ApiDoctor | null>(null)
 
   const loadDoctors = useCallback(() => {
     if (!clinicId) { setLoadingDoctors(false); return }
     setLoadingDoctors(true)
     fetchDoctors(clinicId)
-      .then(apiDoctors => {
-        setDoctorList(apiDoctors)
-        const localShifts: ShiftState[] = apiDoctors.flatMap(doc =>
-          DAYS.map((day, idx) => {
-            const s = doc.shifts.find(sh => sh.day_of_week === idx)
-            return { doctorId: doc.id, day, morning: s?.morning ?? false, afternoon: s?.afternoon ?? false }
-          })
-        )
-        setShifts(localShifts)
+      .then(docs => {
+        setDoctorList(docs)
+        const sm: Record<string, WeekSchedule> = {}
+        for (const doc of docs) sm[doc.id] = apiShiftsToSchedule(doc.shifts)
+        setSchedules(sm)
       })
       .catch(console.error)
       .finally(() => setLoadingDoctors(false))
@@ -1202,87 +1616,63 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
 
   useEffect(() => { loadDoctors() }, [loadDoctors])
 
-  const getShift = (doctorId: string, day: string) =>
-    shifts.find(s => s.doctorId === doctorId && s.day === day)
-
-  const toggleShift = (doctorId: string, day: string, period: 'morning' | 'afternoon') => {
-    setShifts(prev =>
-      prev.map(s => s.doctorId === doctorId && s.day === day ? { ...s, [period]: !s[period] } : s)
-    )
-    setShiftsSaved(false)
+  function handleSlotsChange(day: number, slots: DaySlot[]) {
+    if (!selectedDoctor) return
+    setSchedules(prev => ({ ...prev, [selectedDoctor]: { ...prev[selectedDoctor], [day]: slots } }))
+    setSaved(false)
   }
 
-  const handleSaveShifts = async () => {
-    setConfirmSave(false)
-    setSavingShifts(true)
+  async function handleSave() {
+    if (!selectedDoctor) return
+    setSaving(true)
     setShiftError('')
     try {
-      for (const doc of doctorList) {
-        const apiShifts = DAYS.map((day, idx) => {
-          const s = shifts.find(sh => sh.doctorId === doc.id && sh.day === day)
-          return { day_of_week: idx, morning: s?.morning ?? false, afternoon: s?.afternoon ?? false }
-        })
-        await updateDoctorShifts(doc.id, apiShifts)
-      }
-      setShiftsSaved(true)
-      setTimeout(() => setShiftsSaved(false), 2500)
+      await updateDoctorShifts(selectedDoctor, scheduleToApiShifts(schedules[selectedDoctor] ?? {}))
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
     } catch (e) {
       setShiftError((e as Error).message)
     } finally {
-      setSavingShifts(false)
+      setSaving(false)
     }
   }
 
-  const handleDeleteDoctor = async (doctorId: string) => {
+  async function handleDeleteDoctor(doctorId: string) {
     try {
       await apiDeleteDoctor(doctorId)
       setDoctorList(prev => prev.filter(d => d.id !== doctorId))
-      setShifts(prev => prev.filter(s => s.doctorId !== doctorId))
+      setSchedules(prev => { const n = { ...prev }; delete n[doctorId]; return n })
       if (selectedDoctor === doctorId) setSelectedDoctor(null)
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setConfirmDelete(null)
-    }
+    } catch (e) { console.error(e) }
+    finally { setConfirmDelete(null) }
   }
 
-  const handleDoctorUpdated = (updated: ApiDoctor) => {
+  function handleDoctorCreated(newDoc: ApiDoctor) {
+    setDoctorList(prev => [...prev, newDoc])
+    setSchedules(prev => ({ ...prev, [newDoc.id]: {} }))
+    setShowAddDoctor(false)
+  }
+
+  function handleDoctorUpdated(updated: ApiDoctor) {
     setDoctorList(prev => prev.map(d => d.id === updated.id ? updated : d))
     setEditingDoctor(null)
   }
 
-  const handleDoctorCreated = (newDoc: ApiDoctor) => {
-    setDoctorList(prev => [...prev, newDoc])
-    setShifts(prev => [
-      ...prev,
-      ...DAYS.map(day => ({ doctorId: newDoc.id, day, morning: false, afternoon: false })),
-    ])
-    setShowAddDoctor(false)
-  }
-
-  const filteredDoctors = selectedDoctor ? doctorList.filter(d => d.id === selectedDoctor) : doctorList
+  const selectedDoc = doctorList.find(d => d.id === selectedDoctor) ?? null
 
   return (
     <div className="flex flex-col gap-6">
       {showAddDoctor && (
-        <AddDoctorModal
-          clinicId={clinicId}
-          onClose={() => setShowAddDoctor(false)}
-          onCreated={handleDoctorCreated}
-        />
+        <AddDoctorModal clinicId={clinicId} onClose={() => setShowAddDoctor(false)} onCreated={handleDoctorCreated} />
       )}
       {editingDoctor && (
-        <EditDoctorModal
-          doctor={editingDoctor}
-          onClose={() => setEditingDoctor(null)}
-          onSaved={handleDoctorUpdated}
-        />
+        <EditDoctorModal doctor={editingDoctor} onClose={() => setEditingDoctor(null)} onSaved={handleDoctorUpdated} />
       )}
 
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>ตารางงานแพทย์</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">จัดการตารางกะและวันทำงานของแพทย์รายสัปดาห์</p>
+          <p className="text-sm text-muted-foreground mt-0.5">จัดการเวลาทำงานของแพทย์รายสัปดาห์</p>
         </div>
         <button
           onClick={() => setShowAddDoctor(true)}
@@ -1301,177 +1691,41 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
         </div>
       ) : (
         <>
+          {/* Doctor cards */}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {doctorList.map(doc => {
-              const workDays = DAYS.filter(d => { const s = getShift(doc.id, d); return s && (s.morning || s.afternoon) }).length
-              return (
-                <div
-                  key={doc.id}
-                  onClick={() => setSelectedDoctor(selectedDoctor === doc.id ? null : doc.id)}
-                  className={`bg-card border rounded-xl p-4 text-left transition-all hover:shadow-sm cursor-pointer ${selectedDoctor === doc.id ? 'border-primary ring-2 ring-primary/20' : 'border-border'}`}
-                >
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className={`w-9 h-9 rounded-xl ${doc.color} flex items-center justify-center text-white font-bold text-sm shrink-0`}>
-                      {doc.initials || doc.name.substring(0, 2)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-foreground truncate leading-tight">{doc.name}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5 truncate">{doc.specialty}</p>
-                    </div>
-                    <div className="flex items-center gap-0.5 shrink-0">
-                      <button
-                        onClick={e => { e.stopPropagation(); setEditingDoctor(doc) }}
-                        className="p-1.5 text-muted-foreground hover:text-primary hover:bg-muted rounded-lg transition-colors cursor-pointer"
-                        title="แก้ไข"
-                      >
-                        <Pencil size={11} />
-                      </button>
-                      <button
-                        onClick={e => { e.stopPropagation(); setConfirmDelete(confirmDelete === doc.id ? null : doc.id) }}
-                        className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-muted rounded-lg transition-colors cursor-pointer"
-                        title="ลบ"
-                      >
-                        <Trash2 size={11} />
-                      </button>
-                    </div>
-                  </div>
-                  {confirmDelete === doc.id && (
-                    <div
-                      onClick={e => e.stopPropagation()}
-                      className="flex items-center gap-2 mb-3 px-2.5 py-2 bg-rose-50 border border-rose-200 rounded-lg"
-                    >
-                      <span className="text-xs text-rose-700 flex-1">ลบแพทย์นี้?</span>
-                      <button
-                        onClick={() => handleDeleteDoctor(doc.id)}
-                        className="text-[10px] font-semibold text-white bg-rose-600 px-2 py-1 rounded hover:bg-rose-700 transition-colors cursor-pointer"
-                      >
-                        ยืนยัน
-                      </button>
-                      <button
-                        onClick={() => setConfirmDelete(null)}
-                        className="text-[10px] text-muted-foreground hover:text-foreground cursor-pointer"
-                      >
-                        ยกเลิก
-                      </button>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-1">
-                    {DAY_SHORT.map((d, i) => {
-                      const s = getShift(doc.id, DAYS[i])
-                      const active = s && (s.morning || s.afternoon)
-                      const both = s && s.morning && s.afternoon
-                      return (
-                        <div key={d} className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold transition-colors ${
-                          both ? `${doc.color} text-white` : active ? `${doc.color} text-white opacity-60` : 'bg-muted text-muted-foreground'
-                        }`}>
-                          {d}
-                        </div>
-                      )
-                    })}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-2">{workDays} วัน/สัปดาห์</p>
-                </div>
-              )
-            })}
+            {doctorList.map(doc => (
+              <DoctorCard
+                key={doc.id}
+                doctor={doc}
+                schedule={schedules[doc.id] ?? {}}
+                selected={selectedDoctor === doc.id}
+                onSelect={() => setSelectedDoctor(selectedDoctor === doc.id ? null : doc.id)}
+                onEdit={() => setEditingDoctor(doc)}
+                confirmDelete={confirmDelete === doc.id}
+                onDeleteRequest={() => setConfirmDelete(confirmDelete === doc.id ? null : doc.id)}
+                onConfirmDelete={() => handleDeleteDoctor(doc.id)}
+                onCancelDelete={() => setConfirmDelete(null)}
+              />
+            ))}
           </div>
 
-          <div className="bg-card border border-border rounded-xl overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-wrap gap-3">
-              <h2 className="font-semibold text-foreground text-sm">
-                {selectedDoctor
-                  ? `ตารางงาน — ${doctorList.find(d => d.id === selectedDoctor)?.name}`
-                  : 'ตารางงานทั้งหมด (รายสัปดาห์)'}
-              </h2>
-              <div className="flex items-center gap-2">
-                {selectedDoctor && (
-                  <button onClick={() => setSelectedDoctor(null)} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer">
-                    <X size={12} />ดูทั้งหมด
-                  </button>
-                )}
-                {confirmSave ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">บันทึกตารางนี้?</span>
-                    <button
-                      onClick={handleSaveShifts}
-                      className="text-xs font-semibold bg-primary text-primary-foreground px-3 py-1.5 rounded-lg hover:bg-primary/90 transition-colors cursor-pointer"
-                    >
-                      ยืนยัน
-                    </button>
-                    <button
-                      onClick={() => setConfirmSave(false)}
-                      className="text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 rounded-lg hover:bg-muted transition-colors cursor-pointer"
-                    >
-                      ยกเลิก
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => setConfirmSave(true)}
-                    disabled={savingShifts}
-                    className="flex items-center gap-1.5 text-sm bg-primary text-primary-foreground font-medium px-3 py-1.5 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors cursor-pointer"
-                  >
-                    <Save size={13} />
-                    {savingShifts ? 'กำลังบันทึก...' : shiftsSaved ? 'บันทึกแล้ว ✓' : 'บันทึกตาราง'}
-                  </button>
-                )}
-              </div>
+          {/* Schedule editor — appears when a doctor is selected */}
+          {selectedDoc ? (
+            <ScheduleEditor
+              doctor={selectedDoc}
+              schedule={schedules[selectedDoc.id] ?? {}}
+              onSlotsChange={handleSlotsChange}
+              onSave={handleSave}
+              saving={saving}
+              saved={saved}
+              error={shiftError}
+            />
+          ) : (
+            <div className="bg-card border border-dashed border-border rounded-xl p-8 text-center">
+              <CalendarCheck2 size={28} className="mx-auto text-muted-foreground/30 mb-2" />
+              <p className="text-sm text-muted-foreground">เลือกแพทย์เพื่อแก้ไขตารางเวลา</p>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-muted/40 border-b border-border">
-                    <th className="text-left px-5 py-3 text-xs font-semibold text-muted-foreground w-52">แพทย์</th>
-                    {DAYS.map(day => (
-                      <th key={day} className="text-center px-2 py-3 text-xs font-semibold text-muted-foreground min-w-24">{day}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredDoctors.map(doc => (
-                    <tr key={doc.id} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-2.5">
-                          <div className={`w-7 h-7 rounded-lg ${doc.color} flex items-center justify-center text-white font-bold text-xs shrink-0`}>
-                            {doc.initials || doc.name.substring(0, 2)}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-xs font-semibold text-foreground truncate">{doc.name}</p>
-                            <p className="text-[10px] text-muted-foreground">{doc.specialty}</p>
-                          </div>
-                        </div>
-                      </td>
-                      {DAYS.map(day => {
-                        const s = getShift(doc.id, day)
-                        return (
-                          <td key={day} className="px-2 py-4 text-center">
-                            <div className="flex flex-col items-center gap-1">
-                              {(['morning', 'afternoon'] as const).map(period => (
-                                <button
-                                  key={period}
-                                  onClick={() => toggleShift(doc.id, day, period)}
-                                  className={`w-10 h-7 rounded text-[10px] font-medium transition-colors cursor-pointer ${
-                                    s?.[period]
-                                      ? `${doc.color} text-white`
-                                      : 'bg-muted text-muted-foreground hover:bg-muted-foreground/20'
-                                  }`}
-                                >
-                                  {period === 'morning' ? 'เช้า' : 'บ่าย'}
-                                </button>
-                              ))}
-                            </div>
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="px-5 py-3 border-t border-border bg-muted/20 flex items-center gap-4 flex-wrap">
-              {shiftError && <p className="text-xs text-destructive">{shiftError}</p>}
-              <p className="ml-auto text-xs text-muted-foreground">คลิกที่ช่องเช้า/บ่ายเพื่อแก้ไข แล้วกด "บันทึกตาราง"</p>
-            </div>
-          </div>
+          )}
         </>
       )}
     </div>

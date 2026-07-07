@@ -22,10 +22,10 @@ export function updateBookingStatus(bookingId: string, status: 'done' | 'cancell
 
 // ── Doctor types ──────────────────────────────────────────────────────────────
 
-export interface DoctorShift {
+export interface DoctorTimeSlot {
   day_of_week: number
-  morning: boolean
-  afternoon: boolean
+  start: string  // "08:00"
+  end: string    // "17:00"
 }
 
 export interface Doctor {
@@ -35,7 +35,7 @@ export interface Doctor {
   specialty: string
   color: string
   initials: string
-  shifts: DoctorShift[]
+  shifts: DoctorTimeSlot[]
 }
 
 export interface DoctorCreate {
@@ -58,10 +58,10 @@ export function createDoctor(clinicId: string, data: DoctorCreate): Promise<Doct
   })
 }
 
-export function updateDoctorShifts(doctorId: string, shifts: DoctorShift[]): Promise<void> {
+export function updateDoctorShifts(doctorId: string, slots: DoctorTimeSlot[]): Promise<void> {
   return apiFetch<void>(`/doctors/${doctorId}/shifts`, {
     method: 'PUT',
-    body: JSON.stringify(shifts),
+    body: JSON.stringify(slots),
   })
 }
 

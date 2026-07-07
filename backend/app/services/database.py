@@ -411,8 +411,12 @@ def get_doctors(clinic_id: str) -> list[dict]:
                 ids = tuple(d["id"] for d in doctors)
                 placeholders = ",".join(["%s"] * len(ids))
                 cur.execute(
-                    f"SELECT doctor_id::text, day_of_week, morning, afternoon "
-                    f"FROM doctor_shifts WHERE doctor_id::text IN ({placeholders})",
+                    f"SELECT doctor_id::text, day_of_week, "
+                    f"to_char(start_time, 'HH24:MI') AS start, "
+                    f"to_char(end_time, 'HH24:MI') AS end "
+                    f"FROM doctor_time_slots "
+                    f"WHERE doctor_id::text IN ({placeholders}) "
+                    f"ORDER BY day_of_week, sort_order",
                     ids,
                 )
                 shifts_map: dict[str, list[dict]] = {}
@@ -420,8 +424,8 @@ def get_doctors(clinic_id: str) -> list[dict]:
                     did = s["doctor_id"]
                     shifts_map.setdefault(did, []).append({
                         "day_of_week": s["day_of_week"],
-                        "morning": s["morning"],
-                        "afternoon": s["afternoon"],
+                        "start": s["start"],
+                        "end": s["end"],
                     })
                 for d in doctors:
                     d["shifts"] = shifts_map.get(d["id"], [])
@@ -465,13 +469,14 @@ def upsert_doctor_shifts(doctor_id: str, shifts: list[dict]) -> None:
     with get_conn() as conn:
         with cursor(conn) as cur:
             cur.execute(
-                "DELETE FROM doctor_shifts WHERE doctor_id::text = %s", (doctor_id,)
+                "DELETE FROM doctor_time_slots WHERE doctor_id::text = %s", (doctor_id,)
             )
-            for s in shifts:
+            for i, s in enumerate(shifts):
                 cur.execute(
-                    "INSERT INTO doctor_shifts (doctor_id, day_of_week, morning, afternoon) "
-                    "VALUES (%s::uuid, %s, %s, %s)",
-                    (doctor_id, s["day_of_week"], s["morning"], s["afternoon"]),
+                    "INSERT INTO doctor_time_slots "
+                    "(doctor_id, day_of_week, start_time, end_time, sort_order) "
+                    "VALUES (%s::uuid, %s, %s::time, %s::time, %s)",
+                    (doctor_id, s["day_of_week"], s["start"], s["end"], i),
                 )
 
 

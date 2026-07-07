@@ -2,16 +2,16 @@ from typing import Optional
 from pydantic import BaseModel
 
 
-class ShiftOut(BaseModel):
+class TimeSlotOut(BaseModel):
     day_of_week: int
-    morning: bool
-    afternoon: bool
+    start: str   # "08:00"
+    end: str     # "17:00"
 
 
-class ShiftUpdate(BaseModel):
+class TimeSlotUpdate(BaseModel):
     day_of_week: int
-    morning: bool
-    afternoon: bool
+    start: str
+    end: str
 
 
 class DoctorCreate(BaseModel):
@@ -35,4 +35,4 @@ class DoctorOut(BaseModel):
     specialty: str
     color: str
     initials: str
-    shifts: list[ShiftOut] = []
+    shifts: list[TimeSlotOut] = []
