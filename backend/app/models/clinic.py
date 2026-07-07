@@ -53,12 +53,16 @@ class ClinicSettingsOut(BaseModel):
     name: str
     address: str
     phone: str
+    open_time: str = "08:00"
+    close_time: str = "17:00"
 
 
 class ClinicSettingsUpdate(BaseModel):
     name: Optional[str] = None
     address: Optional[str] = None
     phone: Optional[str] = None
+    open_time: Optional[str] = None
+    close_time: Optional[str] = None
 
 
 class AvailableSlot(BaseModel):

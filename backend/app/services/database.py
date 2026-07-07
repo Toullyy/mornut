@@ -570,6 +570,8 @@ def ensure_schema() -> None:
                     name       TEXT NOT NULL DEFAULT '',
                     address    TEXT NOT NULL DEFAULT '',
                     phone      TEXT NOT NULL DEFAULT '',
+                    open_time  TEXT NOT NULL DEFAULT '08:00',
+                    close_time TEXT NOT NULL DEFAULT '17:00',
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
                 """
@@ -666,6 +668,12 @@ def ensure_schema() -> None:
                 "CREATE INDEX IF NOT EXISTS idx_time_slots_doctor "
                 "ON doctor_time_slots(doctor_id, day_of_week)"
             )
+            # Backfill open_time / close_time on existing clinic_settings rows
+            cur.execute(
+                "ALTER TABLE clinic_settings "
+                "ADD COLUMN IF NOT EXISTS open_time  TEXT NOT NULL DEFAULT '08:00', "
+                "ADD COLUMN IF NOT EXISTS close_time TEXT NOT NULL DEFAULT '17:00'"
+            )
             # One-time migration: copy morning/afternoon rows → time slots
             cur.execute(
                 """
@@ -699,7 +707,7 @@ def ensure_schema() -> None:
 # ── Clinic settings ───────────────────────────────────────────────────────────
 
 # Columns clients are allowed to upsert (clinic_id is the key, updated_at is set automatically).
-_CLINIC_SETTINGS_FIELDS = ("name", "address", "phone")
+_CLINIC_SETTINGS_FIELDS = ("name", "address", "phone", "open_time", "close_time")
 
 
 def get_clinic_settings(clinic_id: str) -> Optional[dict]:

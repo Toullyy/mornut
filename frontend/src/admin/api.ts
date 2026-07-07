@@ -176,6 +176,8 @@ export interface ClinicSettings {
   name: string
   address: string
   phone: string
+  open_time: string
+  close_time: string
 }
 
 export function getClinicSettings(clinicId: string): Promise<ClinicSettings> {
@@ -184,7 +186,7 @@ export function getClinicSettings(clinicId: string): Promise<ClinicSettings> {
 
 export function updateClinicSettings(
   clinicId: string,
-  data: Partial<Omit<ClinicSettings, 'clinic_id'>>,
+  data: Partial<Omit<ClinicSettings, 'clinic_id' | 'open_time' | 'close_time'>> & { open_time?: string; close_time?: string },
 ): Promise<ClinicSettings> {
   return apiFetch<ClinicSettings>(`/admin/clinic-settings?clinic_id=${clinicId}`, {
     method: 'PUT',

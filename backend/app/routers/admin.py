@@ -171,12 +171,22 @@ async def dev_connect(body: LineOAConnect) -> dict:
 
 # ── Clinic settings ──────────────────────────────────────────────────────────
 
+def _row_to_clinic_settings(cid: str, row: dict | None) -> ClinicSettingsOut:
+    return ClinicSettingsOut(
+        clinic_id=cid,
+        name=row["name"] if row else "",
+        address=row["address"] if row else "",
+        phone=row["phone"] if row else "",
+        open_time=row["open_time"] if row else "08:00",
+        close_time=row["close_time"] if row else "17:00",
+    )
+
+
 @router.get("/clinic-settings", response_model=ClinicSettingsOut)
 async def get_clinic_settings(clinic_id: str = "", _admin: AdminUser = None) -> ClinicSettingsOut:
     cid = clinic_id or settings.clinic_id
     row = await asyncio.to_thread(repo.get_clinic_settings, cid)
-    return ClinicSettingsOut(clinic_id=cid, name=row["name"] if row else "",
-                              address=row["address"] if row else "", phone=row["phone"] if row else "")
+    return _row_to_clinic_settings(cid, row)
 
 
 @router.put("/clinic-settings", response_model=ClinicSettingsOut)
@@ -189,7 +199,7 @@ async def update_clinic_settings(
     row = await asyncio.to_thread(
         repo.upsert_clinic_settings, cid, **body.model_dump(exclude_none=True)
     )
-    return ClinicSettingsOut(clinic_id=cid, name=row["name"], address=row["address"], phone=row["phone"])
+    return _row_to_clinic_settings(cid, row)
 
 
 # ── Services ──────────────────────────────────────────────────────────────────

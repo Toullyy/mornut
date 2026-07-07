@@ -808,17 +808,6 @@ function EditDoctorModal({
 
 // ── Doctor schedule helpers ────────────────────────────────────────────────
 
-const SLOT_PRESETS: Record<string, DaySlot[]> = {
-  morning:   [{ start: '08:00', end: '12:00' }],
-  afternoon: [{ start: '13:00', end: '17:00' }],
-  fullday:   [{ start: '08:00', end: '12:00' }, { start: '13:00', end: '17:00' }],
-}
-
-const PRESET_LABELS: Record<string, { th: string; hint: string }> = {
-  morning:   { th: 'เช้า',     hint: '08:00–12:00' },
-  afternoon: { th: 'บ่าย',     hint: '13:00–17:00' },
-  fullday:   { th: 'เต็มวัน', hint: '08:00–17:00' },
-}
 
 function apiShiftsToSchedule(shifts: { day_of_week: number; start: string; end: string }[]): WeekSchedule {
   return shifts.reduce<WeekSchedule>((acc, s) => {
@@ -948,6 +937,8 @@ function ScheduleEditor({
   saving,
   saved,
   error,
+  clinicOpenTime = '08:00',
+  clinicCloseTime = '17:00',
 }: {
   doctor: ApiDoctor
   schedule: WeekSchedule
@@ -956,12 +947,25 @@ function ScheduleEditor({
   saving: boolean
   saved: boolean
   error: string
+  clinicOpenTime?: string
+  clinicCloseTime?: string
 }) {
   const [expandedDay, setExpandedDay] = useState<number | null>(null)
   const [selectedDays, setSelectedDays] = useState<Set<number>>(new Set())
   const [copyDay, setCopyDay] = useState<number | null>(null)
   const [copyTargets, setCopyTargets] = useState<Set<number>>(new Set())
   const [bulkPreset, setBulkPreset] = useState<string>('morning')
+
+  const slotPresets: Record<string, DaySlot[]> = {
+    morning:   [{ start: clinicOpenTime, end: '12:00' }],
+    afternoon: [{ start: '13:00', end: clinicCloseTime }],
+    fullday:   [{ start: clinicOpenTime, end: clinicCloseTime }],
+  }
+  const presetLabels: Record<string, { th: string; hint: string }> = {
+    morning:   { th: 'เช้า',     hint: `${clinicOpenTime}–12:00` },
+    afternoon: { th: 'บ่าย',     hint: `13:00–${clinicCloseTime}` },
+    fullday:   { th: 'เต็มวัน', hint: `${clinicOpenTime}–${clinicCloseTime}` },
+  }
 
   function toggleSelectDay(day: number) {
     setSelectedDays(prev => {
@@ -973,7 +977,7 @@ function ScheduleEditor({
   }
 
   function applyBulkPreset() {
-    const slots = SLOT_PRESETS[bulkPreset] ?? []
+    const slots = slotPresets[bulkPreset] ?? []
     selectedDays.forEach(day => onSlotsChange(day, slots.map(s => ({ ...s }))))
     setSelectedDays(new Set())
   }
@@ -1018,7 +1022,7 @@ function ScheduleEditor({
         <div className="flex items-center gap-3 px-5 py-2.5 bg-primary/5 border-b border-primary/10 flex-wrap">
           <span className="text-xs font-semibold text-primary">{selectedDays.size} วัน</span>
           <div className="flex gap-1">
-            {Object.entries(PRESET_LABELS).map(([k, v]) => (
+            {Object.entries(presetLabels).map(([k, v]) => (
               <button
                 key={k}
                 onClick={() => setBulkPreset(k)}
@@ -1144,10 +1148,10 @@ function ScheduleEditor({
                   {/* Presets */}
                   <div className="flex items-center gap-1.5 mb-3 flex-wrap">
                     <span className="text-[11px] text-muted-foreground font-medium mr-0.5">Preset:</span>
-                    {Object.entries(PRESET_LABELS).map(([k, v]) => (
+                    {Object.entries(presetLabels).map(([k, v]) => (
                       <button
                         key={k}
-                        onClick={() => onSlotsChange(dayIdx, SLOT_PRESETS[k].map(s => ({ ...s })))}
+                        onClick={() => onSlotsChange(dayIdx, slotPresets[k].map(s => ({ ...s })))}
                         className="text-[11px] px-2.5 py-1 rounded-lg border border-border hover:border-primary hover:bg-primary/5 hover:text-primary text-muted-foreground transition-colors cursor-pointer"
                       >
                         {v.th} <span className="opacity-50">{v.hint}</span>
@@ -1199,7 +1203,7 @@ function ScheduleEditor({
                   </div>
 
                   <button
-                    onClick={() => onSlotsChange(dayIdx, [...slots, { start: '09:00', end: '12:00' }])}
+                    onClick={() => onSlotsChange(dayIdx, [...slots, { start: clinicOpenTime, end: clinicCloseTime }])}
                     className="mt-2.5 flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors cursor-pointer"
                   >
                     <Plus size={12} />เพิ่มช่วงเวลา
@@ -1599,6 +1603,17 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
   const [saved, setSaved] = useState(false)
   const [shiftError, setShiftError] = useState('')
   const [editingDoctor, setEditingDoctor] = useState<ApiDoctor | null>(null)
+  const [clinicOpenTime, setClinicOpenTime] = useState('08:00')
+  const [clinicCloseTime, setClinicCloseTime] = useState('17:00')
+
+  useEffect(() => {
+    if (clinicId) {
+      getClinicSettings(clinicId).then(s => {
+        setClinicOpenTime(s.open_time || '08:00')
+        setClinicCloseTime(s.close_time || '17:00')
+      }).catch(() => {})
+    }
+  }, [clinicId])
 
   const loadDoctors = useCallback(() => {
     if (!clinicId) { setLoadingDoctors(false); return }
@@ -1719,6 +1734,8 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
               saving={saving}
               saved={saved}
               error={shiftError}
+              clinicOpenTime={clinicOpenTime}
+              clinicCloseTime={clinicCloseTime}
             />
           ) : (
             <div className="bg-card border border-dashed border-border rounded-xl p-8 text-center">
@@ -2674,9 +2691,13 @@ function ChatView({ clinicId }: { clinicId: string }) {
 function ClinicInfoSection() {
   const fieldFull =
     'w-full text-sm bg-input-background border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring/30'
+  const timeInput =
+    'text-sm bg-input-background border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring/30 font-mono'
   const [name, setName] = useState('')
   const [address, setAddress] = useState('')
   const [phone, setPhone] = useState('')
+  const [openTime, setOpenTime] = useState('08:00')
+  const [closeTime, setCloseTime] = useState('17:00')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -2688,17 +2709,23 @@ function ClinicInfoSection() {
         setName(s.name)
         setAddress(s.address)
         setPhone(s.phone)
+        setOpenTime(s.open_time || '08:00')
+        setCloseTime(s.close_time || '17:00')
       })
       .catch(e => setError((e as Error).message))
       .finally(() => setLoading(false))
   }, [])
 
   async function handleSave() {
+    if (openTime >= closeTime) {
+      setError('เวลาเปิดต้องน้อยกว่าเวลาปิด')
+      return
+    }
     setSaving(true)
     setError('')
     setNotice('')
     try {
-      await updateClinicSettings(CLINIC_ID, { name, address, phone })
+      await updateClinicSettings(CLINIC_ID, { name, address, phone, open_time: openTime, close_time: closeTime })
       setNotice('บันทึกแล้ว')
     } catch (e) {
       setError((e as Error).message || 'เกิดข้อผิดพลาด')
@@ -2726,10 +2753,37 @@ function ClinicInfoSection() {
               <label className="block text-xs font-semibold text-muted-foreground mb-1.5">เบอร์โทรคลินิก</label>
               <input type="text" value={phone} onChange={e => setPhone(e.target.value)} className={`${fieldFull} font-mono`} />
             </div>
+
+            {/* Opening hours */}
+            <div>
+              <label className="block text-xs font-semibold text-muted-foreground mb-1.5">เวลาทำการ</label>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Clock3 size={14} className="text-muted-foreground shrink-0" />
+                  <input
+                    type="time"
+                    value={openTime}
+                    onChange={e => setOpenTime(e.target.value)}
+                    className={timeInput}
+                  />
+                </div>
+                <span className="text-sm text-muted-foreground">ถึง</span>
+                <input
+                  type="time"
+                  value={closeTime}
+                  onChange={e => setCloseTime(e.target.value)}
+                  className={timeInput}
+                />
+              </div>
+              {openTime >= closeTime && openTime && closeTime && (
+                <p className="text-xs text-destructive mt-1.5">เวลาเปิดต้องน้อยกว่าเวลาปิด</p>
+              )}
+            </div>
+
             <div>
               <button
                 onClick={handleSave}
-                disabled={saving}
+                disabled={saving || (openTime >= closeTime && Boolean(openTime && closeTime))}
                 className="flex items-center gap-2 bg-primary text-primary-foreground font-medium px-4 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors text-sm cursor-pointer"
               >
                 {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
