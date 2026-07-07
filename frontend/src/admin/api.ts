@@ -65,6 +65,13 @@ export function updateDoctorShifts(doctorId: string, shifts: DoctorShift[]): Pro
   })
 }
 
+export function updateDoctor(doctorId: string, data: Partial<DoctorCreate>): Promise<void> {
+  return apiFetch<void>(`/doctors/${doctorId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+}
+
 export function deleteDoctor(doctorId: string): Promise<void> {
   return apiFetch<void>(`/doctors/${doctorId}`, { method: 'DELETE' })
 }
@@ -81,6 +88,10 @@ export interface AdminBookingCreate {
   coverage: 'cash' | 'sso' | 'universal'
   deposit_amount: number
   clinic_id: string
+}
+
+export function fetchAllBookings<T>(clinicId: string): Promise<T[]> {
+  return apiFetch<T[]>(`/admin/bookings?clinic_id=${clinicId}`)
 }
 
 export function createAdminBooking(data: AdminBookingCreate): Promise<{ id: string }> {

@@ -36,10 +36,11 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  Pencil,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { apiFetch } from '../lib/api'
-import { useFirestoreCollection } from '../hooks/useFirestore'
+import { useBookings } from '../hooks/useBookings'
 import { useChatConversations, useChatMessages } from '../hooks/useChat'
 import AdminLogin from './AdminLogin'
 import {
@@ -47,7 +48,9 @@ import {
   setQuota,
   type QuotaLimits,
   fetchDoctors,
+  fetchAllBookings,
   createDoctor as apiCreateDoctor,
+  updateDoctor as apiUpdateDoctor,
   deleteDoctor as apiDeleteDoctor,
   updateDoctorShifts,
   createAdminBooking,
@@ -86,6 +89,7 @@ interface Booking {
   id: string
   patient_name: string
   phone: string
+  date: string
   time: string
   service_name: string
   coverage: Coverage
@@ -142,6 +146,76 @@ const statusConfig: Record<Status, { label: string; className: string; icon: Rea
   cancelled: { label: 'ยกเลิก', className: 'bg-rose-50 text-rose-500 border border-rose-200', icon: <XCircle size={11} /> },
 }
 
+function Pagination({
+  page,
+  total,
+  pageSize,
+  onChange,
+}: {
+  page: number
+  total: number
+  pageSize: number
+  onChange: (p: number) => void
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  if (total === 0) return null
+
+  const from = (page - 1) * pageSize + 1
+  const to = Math.min(page * pageSize, total)
+
+  const pages: (number | '…')[] = []
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i)
+  } else {
+    pages.push(1)
+    if (page > 3) pages.push('…')
+    for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) pages.push(i)
+    if (page < totalPages - 2) pages.push('…')
+    pages.push(totalPages)
+  }
+
+  const btn = 'min-w-[2rem] h-8 px-1 flex items-center justify-center rounded-lg text-xs font-medium transition-colors cursor-pointer'
+
+  return (
+    <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-muted/20 flex-wrap gap-2">
+      <span className="text-xs text-muted-foreground">
+        แสดง {from}–{to} จาก {total} รายการ
+      </span>
+      {totalPages > 1 && (
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => onChange(page - 1)}
+          disabled={page === 1}
+          className={`${btn} ${page === 1 ? 'opacity-40' : 'hover:bg-muted text-muted-foreground hover:text-foreground'}`}
+        >
+          <ChevronLeft size={14} />
+        </button>
+        {pages.map((p, i) =>
+          p === '…' ? (
+            <span key={`e${i}`} className="min-w-[2rem] h-8 flex items-center justify-center text-xs text-muted-foreground">…</span>
+          ) : (
+            <button
+              key={p}
+              onClick={() => onChange(p as number)}
+              className={`${btn} ${p === page ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground hover:text-foreground'}`}
+            >
+              {p}
+            </button>
+          )
+        )}
+        <button
+          onClick={() => onChange(page + 1)}
+          disabled={page === totalPages}
+          className={`${btn} ${page === totalPages ? 'opacity-40' : 'hover:bg-muted text-muted-foreground hover:text-foreground'}`}
+        >
+          <ChevronRight size={14} />
+        </button>
+      </div>
+      )}
+    </div>
+  )
+}
+
 function StatusBadge({ status }: { status: Status }) {
   const cfg = statusConfig[status]
   return (
@@ -163,7 +237,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
   return (
     <button
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${checked ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer ${checked ? 'bg-primary' : 'bg-muted-foreground/30'}`}
     >
       <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-4' : 'translate-x-0.5'}`} />
     </button>
@@ -176,7 +250,7 @@ function SettingsSection({ title, icon, children }: { title: string; icon: React
     <div className="bg-card border border-border rounded-xl overflow-hidden">
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-5 py-4 hover:bg-muted/30 transition-colors"
+        className="w-full flex items-center justify-between px-5 py-4 hover:bg-muted/30 transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-2.5">
           <div className="text-primary">{icon}</div>
@@ -293,7 +367,7 @@ function AddQueueModal({
       <div className="bg-card border border-border rounded-2xl shadow-xl w-full max-w-md mx-4 max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
           <h2 className="font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>เพิ่มคิวใหม่</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground">
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground cursor-pointer">
             <X size={16} />
           </button>
         </div>
@@ -415,14 +489,14 @@ function AddQueueModal({
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border shrink-0">
           <button
             onClick={onClose}
-            className="text-sm text-muted-foreground hover:text-foreground px-4 py-2 rounded-lg hover:bg-muted transition-colors"
+            className="text-sm text-muted-foreground hover:text-foreground px-4 py-2 rounded-lg hover:bg-muted transition-colors cursor-pointer"
           >
             ยกเลิก
           </button>
           <button
             onClick={handleSubmit}
             disabled={!isValid || submitting}
-            className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-5 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-5 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors cursor-pointer"
           >
             <Plus size={14} />
             {submitting ? 'กำลังเพิ่ม...' : 'เพิ่มคิว'}
@@ -482,7 +556,7 @@ function AddDoctorModal({
       <div className="bg-card border border-border rounded-2xl shadow-xl w-full max-w-sm mx-4">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <h2 className="font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>เพิ่มแพทย์ใหม่</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground">
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground cursor-pointer">
             <X size={16} />
           </button>
         </div>
@@ -530,7 +604,7 @@ function AddDoctorModal({
                   key={color}
                   type="button"
                   onClick={() => setForm(f => ({ ...f, color }))}
-                  className={`w-8 h-8 rounded-full ${color} transition-all ${
+                  className={`w-8 h-8 rounded-full ${color} transition-all cursor-pointer ${
                     form.color === color
                       ? 'ring-2 ring-offset-2 ring-foreground scale-110'
                       : 'hover:scale-105 opacity-60'
@@ -560,17 +634,153 @@ function AddDoctorModal({
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border">
           <button
             onClick={onClose}
-            className="text-sm text-muted-foreground hover:text-foreground px-4 py-2 rounded-lg hover:bg-muted transition-colors"
+            className="text-sm text-muted-foreground hover:text-foreground px-4 py-2 rounded-lg hover:bg-muted transition-colors cursor-pointer"
           >
             ยกเลิก
           </button>
           <button
             onClick={handleSubmit}
             disabled={!isValid || submitting}
-            className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-5 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-5 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors cursor-pointer"
           >
             <Plus size={14} />
             {submitting ? 'กำลังเพิ่ม...' : 'เพิ่มแพทย์'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Edit Doctor Modal ──────────────────────────────────────────────────────
+
+function EditDoctorModal({
+  doctor,
+  onClose,
+  onSaved,
+}: {
+  doctor: ApiDoctor
+  onClose: () => void
+  onSaved: (updated: ApiDoctor) => void
+}) {
+  const [form, setForm] = useState<DoctorCreate>({
+    name: doctor.name,
+    specialty: doctor.specialty,
+    color: doctor.color,
+    initials: doctor.initials,
+  })
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+
+  const isValid = form.name.trim().length > 0 && form.specialty.trim().length > 0
+
+  const handleSubmit = async () => {
+    if (!isValid) return
+    setSubmitting(true)
+    setError('')
+    try {
+      const initials = form.initials.trim() || computeInitials(form.name)
+      await apiUpdateDoctor(doctor.id, { ...form, initials })
+      onSaved({ ...doctor, ...form, initials })
+    } catch (e) {
+      setError((e as Error).message)
+      setSubmitting(false)
+    }
+  }
+
+  const field = 'w-full text-sm bg-input-background border border-border rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-ring/30'
+  const preview = form.initials.trim() || (form.name ? computeInitials(form.name) : '?')
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-card border border-border rounded-2xl shadow-xl w-full max-w-sm mx-4">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+          <h2 className="font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>แก้ไขข้อมูลแพทย์</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground cursor-pointer">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-muted-foreground">ชื่อ-นามสกุล <span className="text-destructive">*</span></label>
+            <input
+              type="text"
+              value={form.name}
+              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              className={field}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-muted-foreground">ความเชี่ยวชาญ <span className="text-destructive">*</span></label>
+            <input
+              type="text"
+              value={form.specialty}
+              onChange={e => setForm(f => ({ ...f, specialty: e.target.value }))}
+              className={field}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-muted-foreground">อักษรย่อ (ไม่เกิน 2 ตัว)</label>
+            <input
+              type="text"
+              placeholder={form.name ? computeInitials(form.name) : 'อก'}
+              value={form.initials}
+              onChange={e => setForm(f => ({ ...f, initials: e.target.value.substring(0, 2) }))}
+              maxLength={2}
+              className={`${field} w-24 font-mono`}
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-medium text-muted-foreground">สีประจำตัว</label>
+            <div className="flex gap-2 flex-wrap">
+              {DOCTOR_COLORS.map(color => (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, color }))}
+                  className={`w-8 h-8 rounded-full ${color} transition-all cursor-pointer ${
+                    form.color === color
+                      ? 'ring-2 ring-offset-2 ring-foreground scale-110'
+                      : 'hover:scale-105 opacity-60'
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 p-3 bg-muted/30 rounded-xl border border-border">
+            <div className={`w-10 h-10 rounded-xl ${form.color} flex items-center justify-center text-white font-bold text-sm shrink-0`}>
+              {preview}
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-foreground">{form.name || 'ชื่อแพทย์'}</p>
+              <p className="text-xs text-muted-foreground">{form.specialty || 'ความเชี่ยวชาญ'}</p>
+            </div>
+          </div>
+
+          {error && (
+            <p className="text-sm text-destructive bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border">
+          <button
+            onClick={onClose}
+            className="text-sm text-muted-foreground hover:text-foreground px-4 py-2 rounded-lg hover:bg-muted transition-colors cursor-pointer"
+          >
+            ยกเลิก
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!isValid || submitting}
+            className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-5 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors cursor-pointer"
+          >
+            <Save size={14} />
+            {submitting ? 'กำลังบันทึก...' : 'บันทึก'}
           </button>
         </div>
       </div>
@@ -594,6 +804,8 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<Status | 'all'>('all')
   const [filterCoverage, setFilterCoverage] = useState<Coverage | 'all'>('all')
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 15
 
   const filtered = bookings.filter(b => {
     const matchSearch = b.patient_name.includes(search) || b.phone.includes(search) || b.id.includes(search)
@@ -601,6 +813,10 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
     const matchCov = filterCoverage === 'all' || b.coverage === filterCoverage
     return matchSearch && matchStatus && matchCov
   })
+
+  useEffect(() => { setPage(1) }, [search, filterStatus, filterCoverage, date, bookings.length])
+
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   const stats = {
     total: bookings.length,
@@ -630,13 +846,13 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
           />
           <button
             onClick={onRefresh}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
           >
             <RefreshCw size={14} />รีเฟรช
           </button>
           <button
             onClick={onAddQueue}
-            className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors"
+            className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors cursor-pointer"
           >
             <Plus size={14} />เพิ่มคิว
           </button>
@@ -712,7 +928,7 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
           {!loading && filtered.length === 0 && (
             <p className="text-center py-12 text-muted-foreground text-sm">ไม่พบข้อมูลที่ค้นหา</p>
           )}
-          {filtered.map(b => {
+          {paginated.map(b => {
             const isTerminal = b.status === 'done' || b.status === 'cancelled' || b.status === 'no_show'
             return (
               <div key={b.id} className={`p-4 flex flex-col gap-2 ${isTerminal ? 'opacity-60' : ''}`}>
@@ -735,7 +951,7 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
                       <button
                         onClick={() => onAction(b.id, 'done')}
                         disabled={actionLoading !== null}
-                        className="flex-1 text-xs font-semibold bg-emerald-600 text-white px-3 py-2 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                        className="flex-1 text-xs font-semibold bg-emerald-600 text-white px-3 py-2 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors cursor-pointer"
                       >
                         {actionLoading === b.id + 'done' ? '...' : 'เสร็จ'}
                       </button>
@@ -743,7 +959,7 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
                     <button
                       onClick={() => onAction(b.id, 'cancelled')}
                       disabled={actionLoading !== null}
-                      className="flex-1 text-xs font-semibold bg-rose-600 text-white px-3 py-2 rounded-lg hover:bg-rose-700 disabled:opacity-50 transition-colors"
+                      className="flex-1 text-xs font-semibold bg-rose-600 text-white px-3 py-2 rounded-lg hover:bg-rose-700 disabled:opacity-50 transition-colors cursor-pointer"
                     >
                       {actionLoading === b.id + 'cancelled' ? '...' : 'ยกเลิก'}
                     </button>
@@ -769,7 +985,7 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
               </tr>
             </thead>
             <tbody>
-              {filtered.map(b => {
+              {paginated.map(b => {
                 const isTerminal = b.status === 'done' || b.status === 'cancelled' || b.status === 'no_show'
                 return (
                   <tr
@@ -798,7 +1014,7 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
                             <button
                               onClick={() => onAction(b.id, 'done')}
                               disabled={actionLoading !== null}
-                              className="text-xs font-semibold bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                              className="text-xs font-semibold bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors cursor-pointer"
                             >
                               {actionLoading === b.id + 'done' ? '...' : 'เสร็จ'}
                             </button>
@@ -806,7 +1022,7 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
                           <button
                             onClick={() => onAction(b.id, 'cancelled')}
                             disabled={actionLoading !== null}
-                            className="text-xs font-semibold bg-rose-600 text-white px-3 py-1.5 rounded-lg hover:bg-rose-700 disabled:opacity-50 transition-colors"
+                            className="text-xs font-semibold bg-rose-600 text-white px-3 py-1.5 rounded-lg hover:bg-rose-700 disabled:opacity-50 transition-colors cursor-pointer"
                           >
                             {actionLoading === b.id + 'cancelled' ? '...' : 'ยกเลิก'}
                           </button>
@@ -826,6 +1042,7 @@ function DashboardView({ bookings, loading, error, onAction, actionLoading, date
             </tbody>
           </table>
         </div>
+        <Pagination page={page} total={filtered.length} pageSize={PAGE_SIZE} onChange={setPage} />
       </div>
     </div>
   )
@@ -879,17 +1096,17 @@ function QuotaView({ date }: { date: string }) {
       <div className="bg-card border border-border rounded-xl p-5">
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-semibold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-            โควตาวันที่ {date}
+            โควตาวันที่ {new Date(date + 'T12:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
           </h2>
           {!editing ? (
-            <button onClick={() => { loadQuota(); setEditing(true) }} className="text-sm text-primary font-medium hover:underline">แก้ไข</button>
+            <button onClick={() => { loadQuota(); setEditing(true) }} className="text-sm text-primary font-medium hover:underline cursor-pointer">แก้ไข</button>
           ) : (
             <div className="flex gap-2">
-              <button onClick={() => setEditing(false)} className="text-sm text-muted-foreground hover:text-foreground">ยกเลิก</button>
+              <button onClick={() => setEditing(false)} className="text-sm text-muted-foreground hover:text-foreground cursor-pointer">ยกเลิก</button>
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="text-sm bg-primary text-primary-foreground font-medium px-3 py-1.5 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+                className="text-sm bg-primary text-primary-foreground font-medium px-3 py-1.5 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-1.5 cursor-pointer"
               >
                 <Save size={13} />{saving ? 'กำลังบันทึก...' : saved ? 'บันทึกแล้ว' : 'บันทึก'}
               </button>
@@ -948,6 +1165,8 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
   const [savingShifts, setSavingShifts] = useState(false)
   const [shiftsSaved, setShiftsSaved] = useState(false)
   const [shiftError, setShiftError] = useState('')
+  const [confirmSave, setConfirmSave] = useState(false)
+  const [editingDoctor, setEditingDoctor] = useState<ApiDoctor | null>(null)
 
   const loadDoctors = useCallback(() => {
     if (!clinicId) { setLoadingDoctors(false); return }
@@ -980,6 +1199,7 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
   }
 
   const handleSaveShifts = async () => {
+    setConfirmSave(false)
     setSavingShifts(true)
     setShiftError('')
     try {
@@ -1012,6 +1232,11 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
     }
   }
 
+  const handleDoctorUpdated = (updated: ApiDoctor) => {
+    setDoctorList(prev => prev.map(d => d.id === updated.id ? updated : d))
+    setEditingDoctor(null)
+  }
+
   const handleDoctorCreated = (newDoc: ApiDoctor) => {
     setDoctorList(prev => [...prev, newDoc])
     setShifts(prev => [
@@ -1032,6 +1257,13 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
           onCreated={handleDoctorCreated}
         />
       )}
+      {editingDoctor && (
+        <EditDoctorModal
+          doctor={editingDoctor}
+          onClose={() => setEditingDoctor(null)}
+          onSaved={handleDoctorUpdated}
+        />
+      )}
 
       <div className="flex items-center justify-between">
         <div>
@@ -1040,7 +1272,7 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
         </div>
         <button
           onClick={() => setShowAddDoctor(true)}
-          className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors"
+          className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors cursor-pointer"
         >
           <Plus size={14} />เพิ่มแพทย์
         </button>
@@ -1059,20 +1291,56 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
             {doctorList.map(doc => {
               const workDays = DAYS.filter(d => { const s = getShift(doc.id, d); return s && (s.morning || s.afternoon) }).length
               return (
-                <button
+                <div
                   key={doc.id}
                   onClick={() => setSelectedDoctor(selectedDoctor === doc.id ? null : doc.id)}
-                  className={`bg-card border rounded-xl p-4 text-left transition-all hover:shadow-sm ${selectedDoctor === doc.id ? 'border-primary ring-2 ring-primary/20' : 'border-border'}`}
+                  className={`bg-card border rounded-xl p-4 text-left transition-all hover:shadow-sm cursor-pointer ${selectedDoctor === doc.id ? 'border-primary ring-2 ring-primary/20' : 'border-border'}`}
                 >
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className={`w-10 h-10 rounded-xl ${doc.color} flex items-center justify-center text-white font-bold text-sm`}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className={`w-9 h-9 rounded-xl ${doc.color} flex items-center justify-center text-white font-bold text-sm shrink-0`}>
                       {doc.initials || doc.name.substring(0, 2)}
                     </div>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold text-foreground truncate leading-tight">{doc.name}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{doc.specialty}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5 truncate">{doc.specialty}</p>
+                    </div>
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <button
+                        onClick={e => { e.stopPropagation(); setEditingDoctor(doc) }}
+                        className="p-1.5 text-muted-foreground hover:text-primary hover:bg-muted rounded-lg transition-colors cursor-pointer"
+                        title="แก้ไข"
+                      >
+                        <Pencil size={11} />
+                      </button>
+                      <button
+                        onClick={e => { e.stopPropagation(); setConfirmDelete(confirmDelete === doc.id ? null : doc.id) }}
+                        className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-muted rounded-lg transition-colors cursor-pointer"
+                        title="ลบ"
+                      >
+                        <Trash2 size={11} />
+                      </button>
                     </div>
                   </div>
+                  {confirmDelete === doc.id && (
+                    <div
+                      onClick={e => e.stopPropagation()}
+                      className="flex items-center gap-2 mb-3 px-2.5 py-2 bg-rose-50 border border-rose-200 rounded-lg"
+                    >
+                      <span className="text-xs text-rose-700 flex-1">ลบแพทย์นี้?</span>
+                      <button
+                        onClick={() => handleDeleteDoctor(doc.id)}
+                        className="text-[10px] font-semibold text-white bg-rose-600 px-2 py-1 rounded hover:bg-rose-700 transition-colors cursor-pointer"
+                      >
+                        ยืนยัน
+                      </button>
+                      <button
+                        onClick={() => setConfirmDelete(null)}
+                        className="text-[10px] text-muted-foreground hover:text-foreground cursor-pointer"
+                      >
+                        ยกเลิก
+                      </button>
+                    </div>
+                  )}
                   <div className="flex items-center gap-1">
                     {DAY_SHORT.map((d, i) => {
                       const s = getShift(doc.id, DAYS[i])
@@ -1080,7 +1348,7 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
                       const both = s && s.morning && s.afternoon
                       return (
                         <div key={d} className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold transition-colors ${
-                          both ? `${doc.color} text-white` : active ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'
+                          both ? `${doc.color} text-white` : active ? `${doc.color} text-white opacity-60` : 'bg-muted text-muted-foreground'
                         }`}>
                           {d}
                         </div>
@@ -1088,7 +1356,7 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
                     })}
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">{workDays} วัน/สัปดาห์</p>
-                </button>
+                </div>
               )
             })}
           </div>
@@ -1102,18 +1370,36 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
               </h2>
               <div className="flex items-center gap-2">
                 {selectedDoctor && (
-                  <button onClick={() => setSelectedDoctor(null)} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
+                  <button onClick={() => setSelectedDoctor(null)} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer">
                     <X size={12} />ดูทั้งหมด
                   </button>
                 )}
-                <button
-                  onClick={handleSaveShifts}
-                  disabled={savingShifts}
-                  className="flex items-center gap-1.5 text-sm bg-primary text-primary-foreground font-medium px-3 py-1.5 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
-                >
-                  <Save size={13} />
-                  {savingShifts ? 'กำลังบันทึก...' : shiftsSaved ? 'บันทึกแล้ว ✓' : 'บันทึกตาราง'}
-                </button>
+                {confirmSave ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">บันทึกตารางนี้?</span>
+                    <button
+                      onClick={handleSaveShifts}
+                      className="text-xs font-semibold bg-primary text-primary-foreground px-3 py-1.5 rounded-lg hover:bg-primary/90 transition-colors cursor-pointer"
+                    >
+                      ยืนยัน
+                    </button>
+                    <button
+                      onClick={() => setConfirmSave(false)}
+                      className="text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 rounded-lg hover:bg-muted transition-colors cursor-pointer"
+                    >
+                      ยกเลิก
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setConfirmSave(true)}
+                    disabled={savingShifts}
+                    className="flex items-center gap-1.5 text-sm bg-primary text-primary-foreground font-medium px-3 py-1.5 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors cursor-pointer"
+                  >
+                    <Save size={13} />
+                    {savingShifts ? 'กำลังบันทึก...' : shiftsSaved ? 'บันทึกแล้ว ✓' : 'บันทึกตาราง'}
+                  </button>
+                )}
               </div>
             </div>
             <div className="overflow-x-auto">
@@ -1124,7 +1410,6 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
                     {DAYS.map(day => (
                       <th key={day} className="text-center px-2 py-3 text-xs font-semibold text-muted-foreground min-w-24">{day}</th>
                     ))}
-                    <th className="px-3 py-3 text-xs font-semibold text-muted-foreground text-center w-16">ลบ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1150,7 +1435,7 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
                                 <button
                                   key={period}
                                   onClick={() => toggleShift(doc.id, day, period)}
-                                  className={`w-10 h-7 rounded text-[10px] font-medium transition-colors ${
+                                  className={`w-10 h-7 rounded text-[10px] font-medium transition-colors cursor-pointer ${
                                     s?.[period]
                                       ? `${doc.color} text-white`
                                       : 'bg-muted text-muted-foreground hover:bg-muted-foreground/20'
@@ -1163,31 +1448,6 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
                           </td>
                         )
                       })}
-                      <td className="px-3 py-4 text-center">
-                        {confirmDelete === doc.id ? (
-                          <div className="flex flex-col items-center gap-1">
-                            <button
-                              onClick={() => handleDeleteDoctor(doc.id)}
-                              className="text-[10px] font-medium text-white bg-rose-600 px-2 py-1 rounded hover:bg-rose-700 transition-colors"
-                            >
-                              ยืนยัน
-                            </button>
-                            <button
-                              onClick={() => setConfirmDelete(null)}
-                              className="text-[10px] text-muted-foreground hover:text-foreground"
-                            >
-                              ยกเลิก
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => setConfirmDelete(doc.id)}
-                            className="p-1.5 text-muted-foreground hover:text-destructive transition-colors rounded"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        )}
-                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1205,19 +1465,66 @@ function DoctorsView({ clinicId }: { clinicId: string }) {
 }
 
 function PatientsView({ bookings }: { bookings: Booking[] }) {
+  const [tab, setTab] = useState<'directory' | 'history'>('directory')
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 20
+  const [allBookings, setAllBookings] = useState<Booking[]>([])
+  const [histLoading, setHistLoading] = useState(false)
+
+  useEffect(() => { setPage(1) }, [search, tab])
+
+  useEffect(() => {
+    if (tab !== 'history') return
+    setHistLoading(true)
+    fetchAllBookings<Booking>(CLINIC_ID)
+      .then(setAllBookings)
+      .catch(console.error)
+      .finally(() => setHistLoading(false))
+  }, [tab])
+
+  // ── Tab 1: unique patient directory ──────────────────────────────────────
   const uniquePatients = bookings.reduce((acc, b) => {
     if (!acc.find(p => p.phone === b.phone)) acc.push(b)
     return acc
   }, [] as Booking[])
-  const filtered = uniquePatients.filter(p => p.patient_name.includes(search) || p.phone.includes(search))
+  const filteredDir = uniquePatients.filter(
+    p => p.patient_name.includes(search) || p.phone.includes(search),
+  )
+  const paginatedDir = filteredDir.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  // ── Tab 2: all bookings, newest first ────────────────────────────────────
+  const filteredHist = allBookings.filter(
+    b => b.patient_name.includes(search) || b.phone.includes(search),
+  )
+  const paginatedHist = filteredHist.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  const tabBtn = (id: 'directory' | 'history', label: string) => (
+    <button
+      onClick={() => setTab(id)}
+      className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors cursor-pointer ${
+        tab === id
+          ? 'bg-primary text-primary-foreground'
+          : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+      }`}
+    >
+      {label}
+    </button>
+  )
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>ข้อมูลผู้ป่วย</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">ผู้ป่วยที่ลงทะเบียนผ่าน LINE OA ทั้งหมด</p>
+      <div className="flex items-end justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>ข้อมูลผู้ป่วย</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">ผู้ป่วยที่ลงทะเบียนผ่าน LINE OA ทั้งหมด</p>
+        </div>
+        <div className="flex items-center gap-1 bg-muted/40 p-1 rounded-xl border border-border">
+          {tabBtn('directory', `รายชื่อผู้ป่วย (${uniquePatients.length})`)}
+          {tabBtn('history', `ประวัติการนัด (${bookings.length})`)}
+        </div>
       </div>
+
       <div className="bg-card border border-border rounded-xl overflow-hidden">
         <div className="p-4 border-b border-border">
           <div className="relative">
@@ -1231,36 +1538,80 @@ function PatientsView({ bookings }: { bookings: Booking[] }) {
             />
           </div>
         </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-muted/50 border-b border-border">
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">ชื่อ-นามสกุล</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">เบอร์โทร</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">สิทธิ์</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">บริการล่าสุด</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map(p => (
-              <tr key={p.id} className="border-b border-border last:border-0 hover:bg-secondary/50 transition-colors cursor-pointer">
-                <td className="px-4 py-3.5">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm">
-                      {p.patient_name[0]}
-                    </div>
-                    <span className="font-medium text-foreground">{p.patient_name}</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3.5 font-mono text-sm text-muted-foreground">{p.phone}</td>
-                <td className="px-4 py-3.5"><CoverageBadge coverage={p.coverage} /></td>
-                <td className="px-4 py-3.5 text-muted-foreground text-sm">{p.service_name}</td>
-              </tr>
-            ))}
-            {filtered.length === 0 && (
-              <tr><td colSpan={4} className="text-center py-12 text-muted-foreground text-sm">ไม่พบข้อมูล</td></tr>
-            )}
-          </tbody>
-        </table>
+
+        {tab === 'directory' ? (
+          <>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-muted/50 border-b border-border">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">ชื่อ-นามสกุล</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">เบอร์โทร</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">สิทธิ์</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">บริการล่าสุด</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedDir.map(p => (
+                  <tr key={p.id} className="border-b border-border last:border-0 hover:bg-secondary/50 transition-colors">
+                    <td className="px-4 py-3.5">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm shrink-0">
+                          {p.patient_name[0]}
+                        </div>
+                        <span className="font-medium text-foreground">{p.patient_name}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3.5 font-mono text-sm text-muted-foreground">{p.phone}</td>
+                    <td className="px-4 py-3.5"><CoverageBadge coverage={p.coverage} /></td>
+                    <td className="px-4 py-3.5 text-muted-foreground text-sm">{p.service_name}</td>
+                  </tr>
+                ))}
+                {filteredDir.length === 0 && (
+                  <tr><td colSpan={4} className="text-center py-12 text-muted-foreground text-sm">ไม่พบข้อมูล</td></tr>
+                )}
+              </tbody>
+            </table>
+            <Pagination page={page} total={filteredDir.length} pageSize={PAGE_SIZE} onChange={setPage} />
+          </>
+        ) : histLoading ? (
+          <p className="text-center py-12 text-sm text-muted-foreground">กำลังโหลด...</p>
+        ) : (
+          <>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-muted/50 border-b border-border">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">วันที่</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">เวลา</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">ชื่อ-นามสกุล</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">บริการ</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">สิทธิ์</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">สถานะ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedHist.map(b => (
+                  <tr key={b.id} className="border-b border-border last:border-0 hover:bg-secondary/50 transition-colors">
+                    <td className="px-4 py-3.5 text-sm text-muted-foreground font-mono whitespace-nowrap">
+                      {new Date(b.date + 'T12:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </td>
+                    <td className="px-4 py-3.5 font-mono text-sm font-medium text-foreground">{b.time}</td>
+                    <td className="px-4 py-3.5">
+                      <p className="font-medium text-foreground">{b.patient_name}</p>
+                      <p className="text-xs text-muted-foreground font-mono mt-0.5">{b.phone}</p>
+                    </td>
+                    <td className="px-4 py-3.5 text-sm text-muted-foreground">{b.service_name}</td>
+                    <td className="px-4 py-3.5"><CoverageBadge coverage={b.coverage} /></td>
+                    <td className="px-4 py-3.5"><StatusBadge status={b.status} /></td>
+                  </tr>
+                ))}
+                {filteredHist.length === 0 && (
+                  <tr><td colSpan={6} className="text-center py-12 text-muted-foreground text-sm">ไม่พบข้อมูล</td></tr>
+                )}
+              </tbody>
+            </table>
+            <Pagination page={page} total={filteredHist.length} pageSize={PAGE_SIZE} onChange={setPage} />
+          </>
+        )}
       </div>
     </div>
   )
@@ -1750,7 +2101,7 @@ function LineOAConnectSection() {
           <button
             onClick={() => run('connect', () => saveLineCredentials(CLINIC_ID, secret, token), 'เชื่อมต่อสำเร็จ')}
             disabled={loading === 'connect' || (!secret && !token)}
-            className="flex items-center gap-2 bg-primary text-primary-foreground font-medium px-4 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors text-sm"
+            className="flex items-center gap-2 bg-primary text-primary-foreground font-medium px-4 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors text-sm cursor-pointer"
           >
             {loading === 'connect' ? <Loader2 size={14} className="animate-spin" /> : <KeyRound size={14} />}
             บันทึกและเชื่อมต่อ
@@ -1779,7 +2130,7 @@ function LineOAConnectSection() {
               <button
                 onClick={() => run('webhook', () => enableWebhook(CLINIC_ID, webhookUrl.trim()), 'ตั้งค่า Webhook สำเร็จ')}
                 disabled={loading === 'webhook' || !webhookUrl.trim()}
-                className="flex items-center gap-2 border border-border text-foreground font-medium px-4 py-2 rounded-lg hover:bg-foreground/5 disabled:opacity-50 transition-colors text-sm"
+                className="flex items-center gap-2 border border-border text-foreground font-medium px-4 py-2 rounded-lg hover:bg-foreground/5 disabled:opacity-50 transition-colors text-sm cursor-pointer"
               >
                 {loading === 'webhook' ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />}
                 ใช้ webhook
@@ -1807,7 +2158,7 @@ function LineOAConnectSection() {
               <button
                 onClick={() => run('richmenu', () => setupRichMenu(CLINIC_ID), 'ตั้งค่า Rich Menu สำเร็จ')}
                 disabled={loading === 'richmenu'}
-                className="flex items-center gap-2 border border-border text-foreground font-medium px-4 py-2 rounded-lg hover:bg-foreground/5 disabled:opacity-50 transition-colors text-sm"
+                className="flex items-center gap-2 border border-border text-foreground font-medium px-4 py-2 rounded-lg hover:bg-foreground/5 disabled:opacity-50 transition-colors text-sm cursor-pointer"
               >
                 {loading === 'richmenu' ? <Loader2 size={14} className="animate-spin" /> : <LayoutGrid size={14} />}
                 {s?.rich_menu_id ? 'สร้างใหม่' : 'ตั้งค่า Rich Menu'}
@@ -1816,7 +2167,7 @@ function LineOAConnectSection() {
                 <button
                   onClick={() => run('delrich', () => deleteRichMenu(CLINIC_ID), 'ลบ Rich Menu แล้ว')}
                   disabled={loading === 'delrich'}
-                  className="flex items-center gap-2 border border-destructive/30 text-destructive font-medium px-4 py-2 rounded-lg hover:bg-destructive/10 disabled:opacity-50 transition-colors text-sm"
+                  className="flex items-center gap-2 border border-destructive/30 text-destructive font-medium px-4 py-2 rounded-lg hover:bg-destructive/10 disabled:opacity-50 transition-colors text-sm cursor-pointer"
                 >
                   {loading === 'delrich' ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                   ลบ
@@ -2160,7 +2511,7 @@ function SettingsView() {
       </SettingsSection>
 
       <div className="flex justify-end">
-        <button className="flex items-center gap-2 bg-primary text-primary-foreground font-medium px-5 py-2.5 rounded-lg hover:bg-primary/90 transition-colors text-sm">
+        <button className="flex items-center gap-2 bg-primary text-primary-foreground font-medium px-5 py-2.5 rounded-lg hover:bg-primary/90 transition-colors text-sm cursor-pointer">
           <Save size={14} />บันทึกการตั้งค่าทั้งหมด
         </button>
       </div>
@@ -2178,10 +2529,7 @@ export default function DashboardPage() {
 
   const constraints = useMemo(() => ({ date, clinicId: CLINIC_ID }), [date])
 
-  const { data: bookings, loading: bLoading, error, refetch } = useFirestoreCollection<Booking>(
-    'bookings',
-    constraints,
-  )
+  const { data: bookings, loading: bLoading, error, refetch } = useBookings<Booking>(constraints)
 
   if (authLoading) return <FullPage>กำลังโหลด...</FullPage>
   if (!user) return <AdminLogin onLogin={(u) => { onLogin(u); refetch() }} />
@@ -2190,6 +2538,7 @@ export default function DashboardPage() {
     setActionLoading(bookingId + action)
     try {
       await updateBookingStatus(bookingId, action)
+      refetch()
     } finally {
       setActionLoading(null)
     }
@@ -2252,7 +2601,7 @@ export default function DashboardPage() {
             <button
               key={item.id}
               onClick={() => setActiveNav(item.id)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-colors text-left ${
+              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-colors text-left cursor-pointer ${
                 activeNav === item.id ? 'bg-primary text-white font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
               }`}
             >
@@ -2270,7 +2619,7 @@ export default function DashboardPage() {
               <p className="text-xs font-semibold text-foreground truncate">{user.email ?? 'แอดมิน'}</p>
               <button
                 onClick={logout}
-                className="text-[10px] text-muted-foreground hover:text-destructive transition-colors"
+                className="text-[10px] text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
               >
                 ออกจากระบบ
               </button>
@@ -2304,7 +2653,7 @@ export default function DashboardPage() {
                 </span>
               )}
             </div>
-            <button className="relative p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+            <button className="relative p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground cursor-pointer">
               <Bell size={16} />
               {pendingCount > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-yellow-500 rounded-full" />}
             </button>

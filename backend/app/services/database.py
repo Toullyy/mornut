@@ -56,6 +56,17 @@ def list_bookings_range(clinic_id: str, start_date: str, end_date: str) -> list[
     return [_row_to_booking(dict(r)) for r in rows]
 
 
+def list_all_bookings(clinic_id: str) -> list[dict]:
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "SELECT * FROM bookings WHERE clinic_id = %s ORDER BY date DESC, time DESC",
+                (clinic_id,),
+            )
+            rows = cur.fetchall()
+    return [_row_to_booking(dict(r)) for r in rows]
+
+
 def create_booking(
     clinic_id: str,
     date: str,
@@ -446,6 +457,11 @@ def create_admin_booking(
                 "UPDATE slots SET reserved = reserved + 1 "
                 "WHERE clinic_id = %s AND date = %s AND time = %s",
                 (clinic_id, date, time_slot),
+            )
+            cur.execute(
+                "UPDATE quotas SET used_count = used_count + 1 "
+                "WHERE clinic_id = %s AND date = %s AND coverage = %s",
+                (clinic_id, date, coverage),
             )
 
     return booking_id
