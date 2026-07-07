@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
-  AlertCircle, BadgeCheck, Bell, CalendarDays, CheckCircle2,
-  Clock, Filter, Plus, RefreshCw, Search, XCircle,
+  AlertCircle, CalendarDays, CheckCircle2,
+  ChevronRight, Clock, Phone, Plus, RefreshCw, Search, X, XCircle,
 } from 'lucide-react'
 import { DatePicker } from '../DatePicker'
 import {
@@ -164,9 +165,9 @@ function AddQueueModal({
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium text-muted-foreground">สิทธิ์การรักษา</label>
               <select value={form.coverage} onChange={e => setForm(f => ({ ...f, coverage: e.target.value as Coverage }))} className={field}>
-                <option value="cash">เงินสด</option>
-                <option value="sso">ประกันสังคม</option>
-                <option value="universal">บัตรทอง</option>
+                <option value="cash">💵 เงินสด</option>
+                <option value="sso">🏥 ประกันสังคม</option>
+                <option value="universal">🪪 บัตรทอง</option>
               </select>
             </div>
           </div>
@@ -196,6 +197,124 @@ function AddQueueModal({
   )
 }
 
+// ── Booking Detail Drawer ────────────────────────────────────────────────────
+
+function BookingDrawer({ booking, onClose, onAction, actionLoading }: {
+  booking: Booking
+  onClose: () => void
+  onAction: (id: string, action: 'done' | 'cancelled') => void
+  actionLoading: string | null
+}) {
+  const isTerminal = ['done', 'cancelled', 'no_show'].includes(booking.status)
+
+  // Close on Escape
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const dateLabel = new Date(booking.date + 'T00:00:00').toLocaleDateString('th-TH', {
+    weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', calendar: 'buddhist',
+  })
+
+  const row = (label: string, value: React.ReactNode) => (
+    <div className="flex items-start justify-between gap-4 py-2.5 border-b border-border/40 last:border-0">
+      <span className="text-sm text-muted-foreground shrink-0">{label}</span>
+      <span className="text-sm text-right">{value}</span>
+    </div>
+  )
+
+  return createPortal(
+    <>
+      <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} />
+      <div className="fixed right-0 top-0 h-full z-50 w-80 bg-card border-l border-border shadow-2xl flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
+          <p className="font-semibold text-sm text-foreground">รายละเอียดการนัด</p>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
+            <X size={15} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {/* Patient header */}
+          <div className="px-5 py-4 border-b border-border">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm shrink-0">
+                {booking.patient_name[0]}
+              </div>
+              <div className="min-w-0">
+                <p className="font-semibold text-foreground truncate">{booking.patient_name}</p>
+                <a href={`tel:${booking.phone}`}
+                  className="text-sm text-muted-foreground font-mono flex items-center gap-1 hover:text-primary transition-colors">
+                  <Phone size={11} />{booking.phone}
+                </a>
+              </div>
+            </div>
+          </div>
+
+          {/* Detail rows */}
+          <div className="px-5 py-3">
+            {row('วันที่', <span className="font-medium text-foreground">{dateLabel}</span>)}
+            {row('เวลา', <span className="font-mono font-semibold text-foreground">{booking.time}</span>)}
+            {row('บริการ', <span className="font-medium text-foreground">{booking.service_name}</span>)}
+            {row('สิทธิ์', <CoverageBadge coverage={booking.coverage} />)}
+            {row('มัดจำ', (
+              <span className="font-mono font-medium text-foreground">
+                {booking.deposit_amount > 0 ? `฿${booking.deposit_amount.toLocaleString()}` : '—'}
+              </span>
+            ))}
+            {row('สถานะ', <StatusBadge status={booking.status} />)}
+          </div>
+        </div>
+
+        {/* Actions */}
+        {!isTerminal ? (
+          <div className="p-4 border-t border-border flex flex-col gap-2 shrink-0">
+            {(booking.status === 'confirmed' || booking.status === 'reminded') && (
+              <button
+                onClick={() => { onAction(booking.id, 'done'); onClose() }}
+                disabled={actionLoading !== null}
+                className="w-full flex items-center justify-center gap-2 bg-emerald-600 text-white text-sm font-semibold py-2.5 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors cursor-pointer">
+                <CheckCircle2 size={15} />เสร็จสิ้น
+              </button>
+            )}
+            <button
+              onClick={() => { onAction(booking.id, 'cancelled'); onClose() }}
+              disabled={actionLoading !== null}
+              className="w-full flex items-center justify-center gap-2 border border-border text-muted-foreground text-sm font-medium py-2.5 rounded-lg hover:bg-destructive/5 hover:text-destructive hover:border-destructive/30 disabled:opacity-50 transition-colors cursor-pointer">
+              ยกเลิกการนัด
+            </button>
+          </div>
+        ) : (
+          <div className="p-4 border-t border-border shrink-0">
+            <p className="text-xs text-center text-muted-foreground">การนัดนี้เสร็จสิ้นแล้ว</p>
+          </div>
+        )}
+      </div>
+    </>,
+    document.body
+  )
+}
+
+// ── Table Skeleton ───────────────────────────────────────────────────────────
+
+function TableSkeleton() {
+  return (
+    <>
+      {Array.from({ length: 9 }).map((_, i) => (
+        <tr key={i} className="border-b border-border animate-pulse">
+          <td className="px-4 py-3.5"><div className="h-4 w-14 bg-muted rounded" /></td>
+          <td className="px-4 py-3.5"><div className="h-4 w-36 bg-muted rounded" /></td>
+          <td className="px-4 py-3.5"><div className="h-4 w-28 bg-muted rounded" /></td>
+          <td className="px-4 py-3.5"><div className="h-5 w-20 bg-muted rounded-full" /></td>
+          <td className="px-4 py-3.5 text-right"><div className="h-7 w-16 bg-muted rounded-lg ml-auto" /></td>
+        </tr>
+      ))}
+    </>
+  )
+}
+
 // ── Dashboard View ───────────────────────────────────────────────────────────
 
 export interface DashboardViewProps {
@@ -208,132 +327,286 @@ export interface DashboardViewProps {
   onDateChange: (d: string) => void
   onAddQueue: () => void
   onRefresh: () => void
+  externalSearch?: string
 }
 
-export function DashboardView({ bookings, loading, error, onAction, actionLoading, date, onDateChange, onAddQueue, onRefresh }: DashboardViewProps) {
+type FilterStatus = Status | 'all'
+
+export function DashboardView({
+  bookings, loading, error, onAction, actionLoading,
+  date, onDateChange, onAddQueue, onRefresh, externalSearch,
+}: DashboardViewProps) {
   const [search, setSearch] = useState('')
-  const [filterStatus, setFilterStatus] = useState<Status | 'all'>('all')
-  const [filterCoverage, setFilterCoverage] = useState<Coverage | 'all'>('all')
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>('all')
   const [page, setPage] = useState(1)
-  const PAGE_SIZE = 15
+  const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const PAGE_SIZE = 20
 
-  const filtered = bookings.filter(b => {
-    const matchSearch = b.patient_name.includes(search) || b.phone.includes(search) || b.id.includes(search)
-    const matchStatus = filterStatus === 'all' || b.status === filterStatus
-    const matchCov = filterCoverage === 'all' || b.coverage === filterCoverage
-    return matchSearch && matchStatus && matchCov
-  })
-
-  useEffect(() => { setPage(1) }, [search, filterStatus, filterCoverage, date, bookings.length])
-
-  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  // Accept external search from global Ctrl+K
+  useEffect(() => {
+    if (externalSearch !== undefined) {
+      setSearch(externalSearch)
+      setFilterStatus('all')
+      setPage(1)
+      searchRef.current?.focus()
+    }
+  }, [externalSearch])
 
   const stats = {
     total: bookings.length,
+    pending: bookings.filter(b => b.status === 'pending_slip').length,
     confirmed: bookings.filter(b => b.status === 'confirmed').length,
     reminded: bookings.filter(b => b.status === 'reminded').length,
     done: bookings.filter(b => b.status === 'done').length,
-    pending: bookings.filter(b => b.status === 'pending_slip').length,
     noShow: bookings.filter(b => b.status === 'no_show').length,
     cancelled: bookings.filter(b => b.status === 'cancelled').length,
   }
 
-  const todayLabel = new Date(date).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', calendar: 'buddhist' })
+  const STATUS_PILLS: { key: FilterStatus; label: string; count: number; urgent?: boolean }[] = [
+    { key: 'all', label: 'ทั้งหมด', count: stats.total },
+    { key: 'pending_slip', label: 'รอสลิป', count: stats.pending, urgent: true },
+    { key: 'confirmed', label: 'ยืนยัน', count: stats.confirmed },
+    { key: 'reminded', label: 'แจ้งเตือน', count: stats.reminded },
+    { key: 'done', label: 'เสร็จ', count: stats.done },
+    { key: 'no_show', label: 'ไม่มา', count: stats.noShow },
+    { key: 'cancelled', label: 'ยกเลิก', count: stats.cancelled },
+  ]
+
+  const filtered = bookings.filter(b => {
+    const matchSearch = !search || b.patient_name.includes(search) || b.phone.includes(search)
+    const matchStatus = filterStatus === 'all' || b.status === filterStatus
+    return matchSearch && matchStatus
+  })
+
+  useEffect(() => { setPage(1) }, [search, filterStatus, date, bookings.length])
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  const todayLabel = new Date(date).toLocaleDateString('th-TH', {
+    weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', calendar: 'buddhist',
+  })
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
+      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>ตารางคิว</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{todayLabel} · อัปเดตแบบ Real-time</p>
+          <h1 className="text-xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+            ตารางคิว
+          </h1>
+          <p className="text-sm text-muted-foreground mt-0.5">{todayLabel} · Real-time</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <DatePicker value={date} onChange={onDateChange} className="w-48" />
-          <button onClick={onRefresh} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
-            <RefreshCw size={14} />รีเฟรช
+          <DatePicker value={date} onChange={onDateChange} className="w-52" />
+          <button onClick={onRefresh}
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground border border-border px-3 py-2 rounded-lg hover:bg-muted transition-colors cursor-pointer">
+            <RefreshCw size={13} />รีเฟรช
           </button>
-          <button onClick={onAddQueue} className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors cursor-pointer">
+          <button onClick={onAddQueue}
+            className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors cursor-pointer">
             <Plus size={14} />เพิ่มคิว
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
-        {[
-          { label: 'ทั้งหมด', value: stats.total, accent: 'bg-green-100 text-green-700', icon: <CalendarDays size={16} /> },
-          { label: 'ยืนยันแล้ว', value: stats.confirmed, accent: 'bg-emerald-100 text-emerald-700', icon: <CheckCircle2 size={16} /> },
-          { label: 'แจ้งเตือนแล้ว', value: stats.reminded, accent: 'bg-sky-100 text-sky-700', icon: <Bell size={16} /> },
-          { label: 'เสร็จสิ้น', value: stats.done, accent: 'bg-slate-100 text-slate-500', icon: <BadgeCheck size={16} /> },
-          { label: 'รอสลิป', value: stats.pending, accent: 'bg-yellow-100 text-yellow-600', icon: <Clock size={16} /> },
-          { label: 'ไม่มา', value: stats.noShow, accent: 'bg-red-100 text-red-500', icon: <XCircle size={16} /> },
-          { label: 'ยกเลิก', value: stats.cancelled, accent: 'bg-rose-100 text-rose-500', icon: <AlertCircle size={16} /> },
-        ].map(s => (
-          <div key={s.label} className="bg-card border border-border rounded-xl p-4 flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{s.label}</span>
-              <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${s.accent}`}>{s.icon}</div>
-            </div>
-            <p className="text-2xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>{s.value}</p>
+      {/* Attention banner — only when pending slips need action */}
+      {!loading && stats.pending > 0 && (
+        <button
+          onClick={() => setFilterStatus(filterStatus === 'pending_slip' ? 'all' : 'pending_slip')}
+          className={`flex items-center justify-between px-4 py-3 rounded-xl border text-left transition-colors cursor-pointer w-full
+            ${filterStatus === 'pending_slip'
+              ? 'bg-yellow-100 border-yellow-300'
+              : 'bg-yellow-50 border-yellow-200 hover:bg-yellow-100'}`}>
+          <div className="flex items-center gap-2.5">
+            <Clock size={15} className="text-yellow-600 shrink-0" />
+            <span className="text-sm font-semibold text-yellow-800">
+              {stats.pending} รายการรอยืนยันสลิป — ต้องดำเนินการ
+            </span>
           </div>
-        ))}
-      </div>
+          <ChevronRight size={14} className="text-yellow-600 shrink-0" />
+        </button>
+      )}
 
+      {/* No-show warning */}
+      {!loading && stats.noShow > 0 && (
+        <button
+          onClick={() => setFilterStatus(filterStatus === 'no_show' ? 'all' : 'no_show')}
+          className="flex items-center gap-2.5 px-4 py-3 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-left transition-colors cursor-pointer w-full">
+          <XCircle size={15} className="text-red-500 shrink-0" />
+          <span className="text-sm font-semibold text-red-700">{stats.noShow} รายการไม่มา</span>
+        </button>
+      )}
+
+      {/* Main table card */}
       <div className="bg-card border border-border rounded-xl overflow-hidden">
-        <div className="flex items-center gap-3 p-4 border-b border-border flex-wrap">
-          <div className="relative flex-1 min-w-48">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input type="text" placeholder="ค้นหาชื่อ, เบอร์, รหัสคิว..." value={search}
+        {/* Filter area */}
+        <div className="px-4 pt-4 pb-3 border-b border-border space-y-3">
+          {/* Status filter pills */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {STATUS_PILLS.map(pill => {
+              const isActive = filterStatus === pill.key
+              const showUrgent = pill.urgent && pill.count > 0 && !isActive
+              return (
+                <button
+                  key={pill.key}
+                  onClick={() => setFilterStatus(pill.key)}
+                  className={[
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer border',
+                    isActive
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : showUrgent
+                        ? 'bg-yellow-50 text-yellow-700 border-yellow-300 hover:bg-yellow-100'
+                        : 'bg-background text-muted-foreground border-border hover:bg-muted hover:text-foreground',
+                  ].join(' ')}>
+                  {showUrgent && <span className="w-1.5 h-1.5 rounded-full bg-yellow-500" />}
+                  {pill.label}
+                  <span className={`font-semibold ${isActive ? 'text-primary-foreground' : 'text-foreground'}`}>
+                    {pill.count}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Search */}
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+            <input
+              ref={searchRef}
+              type="text"
+              placeholder="ค้นหาชื่อหรือเบอร์โทร..."
+              value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full pl-8 pr-3 py-2 text-sm bg-input-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring/30" />
+              className="w-full pl-8 pr-3 py-2 text-sm bg-input-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring/30"
+            />
+            {search && (
+              <button onClick={() => setSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-muted-foreground hover:text-foreground cursor-pointer">
+                <X size={13} />
+              </button>
+            )}
           </div>
-          <div className="flex items-center gap-2">
-            <Filter size={13} className="text-muted-foreground" />
-            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as Status | 'all')}
-              className="text-sm bg-input-background border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring/30">
-              <option value="all">สถานะทั้งหมด</option>
-              <option value="pending_slip">รอสลิป</option>
-              <option value="confirmed">ยืนยันแล้ว</option>
-              <option value="reminded">แจ้งเตือนแล้ว</option>
-              <option value="done">เสร็จสิ้น</option>
-              <option value="no_show">ไม่มา</option>
-              <option value="cancelled">ยกเลิก</option>
-            </select>
-            <select value={filterCoverage} onChange={e => setFilterCoverage(e.target.value as Coverage | 'all')}
-              className="text-sm bg-input-background border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring/30">
-              <option value="all">สิทธิ์ทั้งหมด</option>
-              <option value="cash">เงินสด</option>
-              <option value="sso">ประกันสังคม</option>
-              <option value="universal">บัตรทอง</option>
-            </select>
-          </div>
-          <span className="ml-auto text-xs text-muted-foreground">{filtered.length} รายการ</span>
         </div>
 
-        {loading && <p className="p-5 text-sm text-muted-foreground">กำลังโหลด...</p>}
-        {error && <p className="p-5 text-sm text-destructive">ข้อผิดพลาด: {error.message}</p>}
+        {/* Error */}
+        {error && (
+          <div className="px-5 py-3 flex items-center gap-2 text-sm text-destructive bg-destructive/5 border-b border-border">
+            <AlertCircle size={14} />ไม่สามารถโหลดข้อมูลได้ กรุณารีเฟรช
+          </div>
+        )}
+
+        {/* Desktop table */}
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-muted/30 border-b border-border">
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide w-20">เวลา</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">ชื่อผู้ป่วย</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">บริการ</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">สถานะ</th>
+                <th className="px-4 py-2.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide text-right">ดำเนินการ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <TableSkeleton />
+              ) : paginated.length === 0 ? null : (
+                paginated.map(b => {
+                  const isTerminal = b.status === 'done' || b.status === 'cancelled' || b.status === 'no_show'
+                  return (
+                    <tr
+                      key={b.id}
+                      onClick={() => setSelectedBooking(b)}
+                      className={`border-b border-border last:border-0 hover:bg-secondary/40 transition-colors cursor-pointer group ${isTerminal ? 'opacity-55' : ''}`}>
+                      <td className="px-4 py-3">
+                        <span className="font-mono text-sm font-semibold text-foreground">{b.time}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-foreground group-hover:text-primary transition-colors">{b.patient_name}</p>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">{b.service_name}</td>
+                      <td className="px-4 py-3"><StatusBadge status={b.status} /></td>
+                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                        {!isTerminal && (
+                          <div className="flex items-center justify-end gap-1.5">
+                            {(b.status === 'confirmed' || b.status === 'reminded') && (
+                              <button
+                                onClick={() => onAction(b.id, 'done')}
+                                disabled={actionLoading !== null}
+                                className="flex items-center gap-1 text-xs font-semibold bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors cursor-pointer">
+                                <CheckCircle2 size={11} />เสร็จ
+                              </button>
+                            )}
+                            <button
+                              onClick={() => onAction(b.id, 'cancelled')}
+                              disabled={actionLoading !== null}
+                              className="text-xs font-medium text-muted-foreground border border-border px-2.5 py-1.5 rounded-lg hover:bg-destructive/5 hover:text-destructive hover:border-destructive/30 disabled:opacity-50 transition-colors cursor-pointer">
+                              ยกเลิก
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+
+              {!loading && filtered.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="py-16 text-center">
+                    <CalendarDays size={32} className="mx-auto text-muted-foreground/30 mb-3" />
+                    <p className="text-sm font-medium text-muted-foreground">
+                      {search || filterStatus !== 'all' ? 'ไม่พบคิวที่ค้นหา' : 'ไม่มีคิววันนี้'}
+                    </p>
+                    {!search && filterStatus === 'all' && (
+                      <button onClick={onAddQueue}
+                        className="mt-3 text-sm text-primary hover:underline cursor-pointer">
+                        + เพิ่มคิวใหม่
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
 
         {/* Mobile card list */}
         <div className="md:hidden divide-y divide-border">
+          {loading && (
+            <div className="p-4 space-y-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="animate-pulse flex gap-3">
+                  <div className="w-14 h-4 bg-muted rounded" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 bg-muted rounded w-3/4" />
+                    <div className="h-3 bg-muted/60 rounded w-1/2" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           {!loading && filtered.length === 0 && (
-            <p className="text-center py-12 text-muted-foreground text-sm">ไม่พบข้อมูลที่ค้นหา</p>
+            <div className="py-16 text-center">
+              <CalendarDays size={28} className="mx-auto text-muted-foreground/30 mb-3" />
+              <p className="text-sm text-muted-foreground">
+                {search || filterStatus !== 'all' ? 'ไม่พบคิวที่ค้นหา' : 'ไม่มีคิววันนี้'}
+              </p>
+            </div>
           )}
           {paginated.map(b => {
             const isTerminal = b.status === 'done' || b.status === 'cancelled' || b.status === 'no_show'
             return (
-              <div key={b.id} className={`p-4 flex flex-col gap-2 ${isTerminal ? 'opacity-60' : ''}`}>
+              <div key={b.id} onClick={() => setSelectedBooking(b)}
+                className={`p-4 flex flex-col gap-2 cursor-pointer hover:bg-secondary/30 transition-colors ${isTerminal ? 'opacity-55' : ''}`}>
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-mono font-bold text-foreground text-sm">{b.time}</span>
                   <StatusBadge status={b.status} />
                 </div>
                 <p className="font-semibold text-foreground">{b.patient_name}</p>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs text-muted-foreground font-mono">{b.phone}</span>
-                  <CoverageBadge coverage={b.coverage} />
-                  {b.deposit_amount > 0 && <span className="text-xs font-mono text-foreground">฿{b.deposit_amount.toLocaleString()}</span>}
-                </div>
                 <p className="text-xs text-muted-foreground">{b.service_name}</p>
                 {!isTerminal && (
-                  <div className="flex gap-2 mt-1">
+                  <div className="flex gap-2 mt-1" onClick={e => e.stopPropagation()}>
                     {(b.status === 'confirmed' || b.status === 'reminded') && (
                       <button onClick={() => onAction(b.id, 'done')} disabled={actionLoading !== null}
                         className="flex-1 text-xs font-semibold bg-emerald-600 text-white px-3 py-2 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors cursor-pointer">
@@ -341,7 +614,7 @@ export function DashboardView({ bookings, loading, error, onAction, actionLoadin
                       </button>
                     )}
                     <button onClick={() => onAction(b.id, 'cancelled')} disabled={actionLoading !== null}
-                      className="flex-1 text-xs font-semibold bg-rose-600 text-white px-3 py-2 rounded-lg hover:bg-rose-700 disabled:opacity-50 transition-colors cursor-pointer">
+                      className="flex-1 text-xs font-medium border border-border text-muted-foreground px-3 py-2 rounded-lg hover:bg-destructive/5 hover:text-destructive disabled:opacity-50 transition-colors cursor-pointer">
                       {actionLoading === b.id + 'cancelled' ? '...' : 'ยกเลิก'}
                     </button>
                   </div>
@@ -351,67 +624,18 @@ export function DashboardView({ bookings, loading, error, onAction, actionLoadin
           })}
         </div>
 
-        {/* Desktop table */}
-        <div className="hidden md:block overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-muted/50 border-b border-border">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">เวลา</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">ชื่อผู้ป่วย</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">บริการ</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">สิทธิ์</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">มัดจำ</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">สถานะ</th>
-                <th className="px-4 py-3 text-xs font-semibold text-muted-foreground text-right">การดำเนินการ</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginated.map(b => {
-                const isTerminal = b.status === 'done' || b.status === 'cancelled' || b.status === 'no_show'
-                return (
-                  <tr key={b.id} className={`border-b border-border last:border-0 hover:bg-secondary/50 transition-colors ${isTerminal ? 'opacity-60' : ''}`}>
-                    <td className="px-4 py-3.5"><span className="font-mono text-sm font-medium text-foreground">{b.time}</span></td>
-                    <td className="px-4 py-3.5">
-                      <p className="font-medium text-foreground">{b.patient_name}</p>
-                      <p className="text-xs text-muted-foreground font-mono mt-0.5">{b.phone}</p>
-                    </td>
-                    <td className="px-4 py-3.5 text-foreground">{b.service_name}</td>
-                    <td className="px-4 py-3.5"><CoverageBadge coverage={b.coverage} /></td>
-                    <td className="px-4 py-3.5">
-                      {b.deposit_amount > 0
-                        ? <span className="font-mono text-sm text-foreground">฿{b.deposit_amount.toLocaleString()}</span>
-                        : <span className="text-muted-foreground text-xs">—</span>}
-                    </td>
-                    <td className="px-4 py-3.5"><StatusBadge status={b.status} /></td>
-                    <td className="px-4 py-3.5">
-                      {!isTerminal && (
-                        <div className="flex items-center justify-end gap-2">
-                          {(b.status === 'confirmed' || b.status === 'reminded') && (
-                            <button onClick={() => onAction(b.id, 'done')} disabled={actionLoading !== null}
-                              className="text-xs font-semibold bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors cursor-pointer">
-                              {actionLoading === b.id + 'done' ? '...' : 'เสร็จ'}
-                            </button>
-                          )}
-                          <button onClick={() => onAction(b.id, 'cancelled')} disabled={actionLoading !== null}
-                            className="text-xs font-semibold bg-rose-600 text-white px-3 py-1.5 rounded-lg hover:bg-rose-700 disabled:opacity-50 transition-colors cursor-pointer">
-                            {actionLoading === b.id + 'cancelled' ? '...' : 'ยกเลิก'}
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-              {!loading && filtered.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="text-center py-12 text-muted-foreground text-sm">ไม่พบข้อมูลที่ค้นหา</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
         <Pagination page={page} total={filtered.length} pageSize={PAGE_SIZE} onChange={setPage} />
       </div>
+
+      {/* Booking detail drawer */}
+      {selectedBooking && (
+        <BookingDrawer
+          booking={selectedBooking}
+          onClose={() => setSelectedBooking(null)}
+          onAction={onAction}
+          actionLoading={actionLoading}
+        />
+      )}
     </div>
   )
 }
