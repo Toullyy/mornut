@@ -426,7 +426,7 @@ function ScheduleEditor({ doctor, schedule, onSlotsChange, onSave, saving, saved
               {isExpanded && (
                 <div className="px-5 pb-4 pt-1 border-t border-border/50">
                   <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-                    <span className="text-[11px] text-muted-foreground font-medium mr-0.5">Preset:</span>
+                    <span className="text-[11px] text-muted-foreground font-medium mr-0.5">รูปแบบ:</span>
                     {Object.entries(presetLabels).map(([k, v]) => (
                       <button key={k} onClick={() => onSlotsChange(dayIdx, slotPresets[k].map(s => ({ ...s })))}
                         className="text-[11px] px-2.5 py-1 rounded-lg border border-border hover:border-primary hover:bg-primary/5 hover:text-primary text-muted-foreground transition-colors cursor-pointer">

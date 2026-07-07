@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Search } from 'lucide-react'
+import { ChevronDown, ChevronUp, Search } from 'lucide-react'
 import { fetchBookingHistory } from '../api'
 import { Pagination } from '../ui/Pagination'
 import { StatusBadge, CoverageBadge } from '../ui/StatusBadge'
@@ -14,6 +14,7 @@ export function PatientsView({ bookings, onBookPatient }: {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [dirPage, setDirPage] = useState(1)
   const [histPage, setHistPage] = useState(1)
+  const [dirSort, setDirSort] = useState<{ key: 'name' | 'phone' | 'service'; dir: 'asc' | 'desc' }>({ key: 'name', dir: 'asc' })
   const PAGE_SIZE = 20
 
   useEffect(() => {
@@ -42,7 +43,28 @@ export function PatientsView({ bookings, onBookPatient }: {
     return acc
   }, [] as Booking[])
   const filteredDir = uniquePatients.filter(p => p.patient_name.includes(search) || p.phone.includes(search))
-  const paginatedDir = filteredDir.slice((dirPage - 1) * PAGE_SIZE, dirPage * PAGE_SIZE)
+  const sortedDir = [...filteredDir].sort((a, b) => {
+    let cmp = 0
+    if (dirSort.key === 'name') cmp = a.patient_name.localeCompare(b.patient_name, 'th')
+    else if (dirSort.key === 'phone') cmp = a.phone.localeCompare(b.phone)
+    else if (dirSort.key === 'service') cmp = a.service_name.localeCompare(b.service_name, 'th')
+    return dirSort.dir === 'asc' ? cmp : -cmp
+  })
+  const paginatedDir = sortedDir.slice((dirPage - 1) * PAGE_SIZE, dirPage * PAGE_SIZE)
+
+  function toggleDirSort(key: typeof dirSort.key) {
+    setDirSort(prev => prev.key === key
+      ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+      : { key, dir: 'asc' })
+    setDirPage(1)
+  }
+
+  function DirSortIcon({ col }: { col: typeof dirSort.key }) {
+    if (dirSort.key !== col) return <ChevronUp size={11} className="opacity-20 ml-0.5" />
+    return dirSort.dir === 'asc'
+      ? <ChevronUp size={11} className="text-primary ml-0.5" />
+      : <ChevronDown size={11} className="text-primary ml-0.5" />
+  }
 
   const tabBtn = (id: 'directory' | 'history', label: string) => (
     <button onClick={() => setTab(id)}
@@ -79,10 +101,19 @@ export function PatientsView({ bookings, onBookPatient }: {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-muted/50 border-b border-border">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">ชื่อ-นามสกุล</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">เบอร์โทร</th>
+                  <th onClick={() => toggleDirSort('name')}
+                    className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground cursor-pointer hover:text-foreground select-none">
+                    <span className="inline-flex items-center">ชื่อ-นามสกุล<DirSortIcon col="name" /></span>
+                  </th>
+                  <th onClick={() => toggleDirSort('phone')}
+                    className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground cursor-pointer hover:text-foreground select-none">
+                    <span className="inline-flex items-center">เบอร์โทร<DirSortIcon col="phone" /></span>
+                  </th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">สิทธิ์</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">บริการล่าสุด</th>
+                  <th onClick={() => toggleDirSort('service')}
+                    className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground cursor-pointer hover:text-foreground select-none">
+                    <span className="inline-flex items-center">บริการล่าสุด<DirSortIcon col="service" /></span>
+                  </th>
                 </tr>
               </thead>
               <tbody>

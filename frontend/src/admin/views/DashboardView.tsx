@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   AlertCircle, CalendarDays, CheckCircle2,
-  ChevronRight, Clock, Phone, Plus, RefreshCw, Search, X, XCircle,
+  ChevronRight, ChevronUp, ChevronDown, Clock, Phone, Plus, RefreshCw, Search, X, XCircle,
 } from 'lucide-react'
 import { DatePicker } from '../DatePicker'
 import {
@@ -288,7 +288,13 @@ function BookingDrawer({ booking, onClose, onAction, actionLoading }: {
           </div>
         ) : (
           <div className="p-4 border-t border-border shrink-0">
-            <p className="text-xs text-center text-muted-foreground">การนัดนี้เสร็จสิ้นแล้ว</p>
+            <p className="text-xs text-center text-muted-foreground">
+              {booking.status === 'done'
+                ? 'การนัดเสร็จสิ้นแล้ว'
+                : booking.status === 'cancelled'
+                  ? 'การนัดถูกยกเลิกแล้ว'
+                  : 'ผู้ป่วยไม่มาตามนัด'}
+            </p>
           </div>
         )}
       </div>
@@ -331,6 +337,8 @@ export interface DashboardViewProps {
 }
 
 type FilterStatus = Status | 'all'
+type SortKey = 'time' | 'name' | 'status'
+type SortDir = 'asc' | 'desc'
 
 export function DashboardView({
   bookings, loading, error, onAction, actionLoading,
@@ -340,6 +348,8 @@ export function DashboardView({
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all')
   const [page, setPage] = useState(1)
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
+  const [sortKey, setSortKey] = useState<SortKey>('time')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
   const searchRef = useRef<HTMLInputElement>(null)
   const PAGE_SIZE = 20
 
@@ -379,8 +389,33 @@ export function DashboardView({
     return matchSearch && matchStatus
   })
 
+  const sorted = [...filtered].sort((a, b) => {
+    let cmp = 0
+    if (sortKey === 'time') cmp = a.time.localeCompare(b.time)
+    else if (sortKey === 'name') cmp = a.patient_name.localeCompare(b.patient_name, 'th')
+    else if (sortKey === 'status') cmp = a.status.localeCompare(b.status)
+    return sortDir === 'asc' ? cmp : -cmp
+  })
+
   useEffect(() => { setPage(1) }, [search, filterStatus, date, bookings.length])
-  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const paginated = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir('asc') }
+  }
+
+  function SortIcon({ col }: { col: SortKey }) {
+    if (sortKey !== col) return <ChevronUp size={11} className="opacity-20 ml-0.5" />
+    return sortDir === 'asc'
+      ? <ChevronUp size={11} className="text-primary ml-0.5" />
+      : <ChevronDown size={11} className="text-primary ml-0.5" />
+  }
+
+  const isToday = date === new Date().toISOString().split('T')[0]
+  const emptyQueueMsg = search || filterStatus !== 'all'
+    ? 'ไม่พบคิวที่ค้นหา'
+    : isToday ? 'ไม่มีคิววันนี้' : 'ไม่มีคิวในวันที่เลือก'
 
   const todayLabel = new Date(date).toLocaleDateString('th-TH', {
     weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', calendar: 'buddhist',
@@ -500,10 +535,19 @@ export function DashboardView({
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-muted/30 border-b border-border">
-                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide w-20">เวลา</th>
-                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">ชื่อผู้ป่วย</th>
+                <th onClick={() => toggleSort('time')}
+                  className="text-left px-4 py-2.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide w-20 cursor-pointer hover:text-foreground select-none">
+                  <span className="inline-flex items-center">เวลา<SortIcon col="time" /></span>
+                </th>
+                <th onClick={() => toggleSort('name')}
+                  className="text-left px-4 py-2.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide cursor-pointer hover:text-foreground select-none">
+                  <span className="inline-flex items-center">ชื่อผู้ป่วย<SortIcon col="name" /></span>
+                </th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">บริการ</th>
-                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">สถานะ</th>
+                <th onClick={() => toggleSort('status')}
+                  className="text-left px-4 py-2.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide cursor-pointer hover:text-foreground select-none">
+                  <span className="inline-flex items-center">สถานะ<SortIcon col="status" /></span>
+                </th>
                 <th className="px-4 py-2.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide text-right">ดำเนินการ</th>
               </tr>
             </thead>
@@ -555,9 +599,7 @@ export function DashboardView({
                 <tr>
                   <td colSpan={5} className="py-16 text-center">
                     <CalendarDays size={32} className="mx-auto text-muted-foreground/30 mb-3" />
-                    <p className="text-sm font-medium text-muted-foreground">
-                      {search || filterStatus !== 'all' ? 'ไม่พบคิวที่ค้นหา' : 'ไม่มีคิววันนี้'}
-                    </p>
+                    <p className="text-sm font-medium text-muted-foreground">{emptyQueueMsg}</p>
                     {!search && filterStatus === 'all' && (
                       <button onClick={onAddQueue}
                         className="mt-3 text-sm text-primary hover:underline cursor-pointer">
@@ -589,9 +631,7 @@ export function DashboardView({
           {!loading && filtered.length === 0 && (
             <div className="py-16 text-center">
               <CalendarDays size={28} className="mx-auto text-muted-foreground/30 mb-3" />
-              <p className="text-sm text-muted-foreground">
-                {search || filterStatus !== 'all' ? 'ไม่พบคิวที่ค้นหา' : 'ไม่มีคิววันนี้'}
-              </p>
+              <p className="text-sm text-muted-foreground">{emptyQueueMsg}</p>
             </div>
           )}
           {paginated.map(b => {

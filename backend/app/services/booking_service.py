@@ -11,13 +11,13 @@ from app.services.line import push_text
 
 async def create(payload: BookingCreate) -> BookingOut:
     doc = {
-        "clinicId": payload.clinic_id,
-        "patientLineId": payload.patient_line_id,
-        "patientName": payload.patient_name,
+        "clinic_id": payload.clinic_id,
+        "patient_line_id": payload.patient_line_id,
+        "patient_name": payload.patient_name,
         "phone": payload.phone,
-        "serviceId": payload.service_id,
-        "serviceName": payload.service_name,
-        "depositAmount": payload.deposit_amount,
+        "service_id": payload.service_id,
+        "service_name": payload.service_name,
+        "deposit_amount": payload.deposit_amount,
         "date": payload.date,
         "time": payload.time,
         "coverage": payload.coverage,

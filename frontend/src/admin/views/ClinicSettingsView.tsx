@@ -310,7 +310,9 @@ function ServicesSection() {
           <div key={s.id} className="flex items-center justify-between gap-3 border border-border rounded-lg px-4 py-3">
             <div className="min-w-0">
               <p className="text-sm font-medium text-foreground truncate">{s.name}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{s.duration_min} นาที · มัดจำ ฿{s.deposit_amount.toLocaleString()}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {s.duration_min} นาที · {s.deposit_amount > 0 ? `มัดจำ ฿${s.deposit_amount.toLocaleString()}` : 'ไม่มีมัดจำ'}
+              </p>
             </div>
             <div className="flex items-center gap-1 shrink-0">
               {confirmDelete === s.id ? (

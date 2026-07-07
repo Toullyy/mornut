@@ -467,12 +467,12 @@ async def create_booking_admin(
 ) -> dict:
     cid = body.clinic_id or settings.clinic_id
     doc = {
-        "clinicId": cid,
-        "patientName": body.patient_name,
+        "clinic_id": cid,
+        "patient_name": body.patient_name,
         "phone": body.phone,
-        "serviceId": body.service_id,
-        "serviceName": body.service_name,
-        "depositAmount": body.deposit_amount,
+        "service_id": body.service_id,
+        "service_name": body.service_name,
+        "deposit_amount": body.deposit_amount,
         "date": body.date,
         "time": body.time,
         "coverage": body.coverage,
