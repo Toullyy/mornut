@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   CalendarCheck2, Clock3, Copy, Pencil, Plus, Save, Stethoscope, Trash2, X,
 } from 'lucide-react'
+import { TimePicker } from '../ui/TimePicker'
 import {
   fetchDoctors, createDoctor as apiCreateDoctor, updateDoctor as apiUpdateDoctor,
   deleteDoctor as apiDeleteDoctor, updateDoctorShifts, getClinicSettings,
@@ -314,7 +315,7 @@ function ScheduleEditor({ doctor, schedule, onSlotsChange, onSave, saving, saved
     setCopyDay(null); setCopyTargets(new Set())
   }
 
-  const slotInput = 'text-sm bg-input-background border border-border rounded-lg px-2 py-1.5 font-mono focus:outline-none focus:ring-2 focus:ring-ring/30 w-28'
+  // slotInput kept for reference — slots now use TimePicker
 
   return (
     <div className="bg-card border border-border rounded-xl overflow-hidden">
@@ -425,13 +426,15 @@ function ScheduleEditor({ doctor, schedule, onSlotsChange, onSave, saving, saved
                   <div className="flex flex-col gap-2">
                     {slots.map((slot, i) => (
                       <div key={i} className="flex items-center gap-2">
-                        <input type="time" value={slot.start}
-                          onChange={e => { const next = [...slots]; next[i] = { ...slot, start: e.target.value }; onSlotsChange(dayIdx, next) }}
-                          className={slotInput} />
+                        <TimePicker
+                          value={slot.start}
+                          onChange={v => { const next = [...slots]; next[i] = { ...slot, start: v }; onSlotsChange(dayIdx, next) }}
+                        />
                         <span className="text-muted-foreground text-xs">–</span>
-                        <input type="time" value={slot.end}
-                          onChange={e => { const next = [...slots]; next[i] = { ...slot, end: e.target.value }; onSlotsChange(dayIdx, next) }}
-                          className={slotInput} />
+                        <TimePicker
+                          value={slot.end}
+                          onChange={v => { const next = [...slots]; next[i] = { ...slot, end: v }; onSlotsChange(dayIdx, next) }}
+                        />
                         <button onClick={() => onSlotsChange(dayIdx, slots.filter((_, j) => j !== i))}
                           className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors cursor-pointer">
                           <Trash2 size={12} />
