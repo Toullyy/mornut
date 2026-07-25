@@ -318,7 +318,10 @@ async def answer_unanswered_question(
 
     cid = clinic_id or settings.clinic_id
 
-    # Append Q&A pair to clinic knowledge and rebuild index in background
+    # Append Q&A pair to clinic knowledge and rebuild index in background,
+    # then push the answer back to every user who asked the same question.
+    push_user_ids: list[str] = row.get("line_user_ids") or []
+
     async def _append_and_rebuild():
         try:
             settings_row = await asyncio.to_thread(repo.get_clinic_settings, cid)
@@ -330,7 +333,18 @@ async def answer_unanswered_question(
         except Exception as e:
             print(f"[SELF_LEARN] append+rebuild failed (non-fatal): {e}")
 
+    async def _push_answer_to_askers():
+        if not push_user_ids:
+            return
+        msg = f"ทางคลินิกได้ตอบคำถามของคุณแล้วค่ะ 💬\n\nคำถาม: {row['question']}\nคำตอบ: {answer}"
+        for uid in push_user_ids:
+            try:
+                await line_service.push_text(uid, msg)
+            except Exception as e:
+                print(f"[SELF_LEARN] push-back to {uid} failed (non-fatal): {e}")
+
     asyncio.ensure_future(_append_and_rebuild())
+    asyncio.ensure_future(_push_answer_to_askers())
     return row
 
 

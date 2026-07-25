@@ -6,20 +6,30 @@ def log_unanswered_question(clinic_id: str, question: str, line_user_id: str = "
 
     Logs only UNKNOWN questions (in-scope but no info). OFFTOPIC questions are
     not actionable and must not create entries here.
+    Accumulates all distinct LINE user IDs who asked for push-back on answer.
     """
+    uid = line_user_id or None
+    uid_arr = [line_user_id] if line_user_id else []
     with get_conn() as conn:
         with cursor(conn) as cur:
             cur.execute(
                 """
-                INSERT INTO unanswered_questions (clinic_id, question, line_user_id, asked_count)
-                VALUES (%s, %s, %s, 1)
-                ON CONFLICT (clinic_id, question)
-                DO UPDATE SET
-                    asked_count  = unanswered_questions.asked_count + 1,
-                    line_user_id = COALESCE(EXCLUDED.line_user_id,
-                                            unanswered_questions.line_user_id)
+                INSERT INTO unanswered_questions
+                    (clinic_id, question, line_user_id, line_user_ids, asked_count)
+                VALUES (%s, %s, %s, %s, 1)
+                ON CONFLICT (clinic_id, question) DO UPDATE SET
+                    asked_count   = unanswered_questions.asked_count + 1,
+                    line_user_id  = COALESCE(EXCLUDED.line_user_id,
+                                             unanswered_questions.line_user_id),
+                    line_user_ids = (
+                        SELECT COALESCE(array_agg(DISTINCT u), '{}')
+                        FROM unnest(
+                            unanswered_questions.line_user_ids
+                            || EXCLUDED.line_user_ids
+                        ) AS u WHERE u IS NOT NULL
+                    )
                 """,
-                (clinic_id, question, line_user_id or None),
+                (clinic_id, question, uid, uid_arr),
             )
 
 
@@ -56,7 +66,7 @@ def answer_question(question_id: str, answer: str) -> dict | None:
                 SET answered = TRUE, answer = %s, answered_at = NOW()
                 WHERE id = %s::uuid
                 RETURNING id::text, clinic_id, question, asked_count, answered,
-                          answer, created_at, answered_at
+                          answer, created_at, answered_at, line_user_ids
                 """,
                 (answer, question_id),
             )

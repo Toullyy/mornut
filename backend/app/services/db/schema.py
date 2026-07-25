@@ -174,6 +174,11 @@ def ensure_schema() -> None:
                 "CREATE INDEX IF NOT EXISTS idx_unanswered_questions_clinic "
                 "ON unanswered_questions(clinic_id, answered, created_at DESC)"
             )
+            # §7 self-learning push-back: accumulate all LINE user IDs who asked
+            cur.execute(
+                "ALTER TABLE unanswered_questions "
+                "ADD COLUMN IF NOT EXISTS line_user_ids TEXT[] NOT NULL DEFAULT '{}'"
+            )
             # §8 Observability: per-turn AI interaction metrics
             cur.execute(
                 """
