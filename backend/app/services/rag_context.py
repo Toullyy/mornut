@@ -8,6 +8,7 @@ Never raises — returns [] on any failure.
 import asyncio
 import math
 import re
+import time
 
 from openai import AsyncOpenAI
 
@@ -19,6 +20,11 @@ _TOP_K = 4
 _MIN_SCORE = 0.30
 _CHUNK_SIZE = 350
 _EMBED_MODEL = "text-embedding-3-small"
+
+# Semantic cache: (clinic_id, question) → retrieved chunks; capped at 5000 entries
+_Q_CACHE: dict[str, tuple[list[str], float]] = {}
+_Q_TTL = 300   # 5 minutes — stays within OpenAI prompt cache TTL window
+_Q_MAX = 5000
 
 
 # ── Chunking ─────────────────────────────────────────────────────────────────
@@ -97,14 +103,51 @@ async def rebuild(clinic_id: str, knowledge_text: str) -> int:
 
     await asyncio.to_thread(repo.save_knowledge_chunks, clinic_id, embedded)
     app_cache.invalidate(clinic_id)
+    _q_cache_invalidate_clinic(clinic_id)
     return len(embedded)
 
 
 # ── Retrieve ──────────────────────────────────────────────────────────────────
 
+def _q_cache_key(clinic_id: str, question: str) -> str:
+    return f"{clinic_id}:{question}"
+
+
+def _q_cache_get(key: str) -> tuple[bool, list[str]]:
+    entry = _Q_CACHE.get(key)
+    if entry is None:
+        return False, []
+    val, exp = entry
+    if math.isfinite(exp) and time.monotonic() > exp:
+        del _Q_CACHE[key]
+        return False, []
+    return True, val
+
+
+def _q_cache_set(key: str, val: list[str]) -> None:
+    if len(_Q_CACHE) >= _Q_MAX:
+        try:
+            del _Q_CACHE[next(iter(_Q_CACHE))]
+        except StopIteration:
+            pass
+    _Q_CACHE[key] = (val, time.monotonic() + _Q_TTL)
+
+
+def _q_cache_invalidate_clinic(clinic_id: str) -> None:
+    prefix = f"{clinic_id}:"
+    stale = [k for k in _Q_CACHE if k.startswith(prefix)]
+    for k in stale:
+        del _Q_CACHE[k]
+
+
 async def retrieve(clinic_id: str, question: str) -> list[str]:
     """Return top-K relevant chunk texts. Never raises; returns [] on any failure."""
     try:
+        cache_key = _q_cache_key(clinic_id, question)
+        hit, cached = _q_cache_get(cache_key)
+        if hit:
+            return cached
+
         rows = await asyncio.to_thread(
             app_cache.get_knowledge_chunks, clinic_id, repo.load_knowledge_chunks
         )
@@ -130,7 +173,9 @@ async def retrieve(clinic_id: str, question: str) -> list[str]:
             scored.append((score, chunk))
 
         scored.sort(key=lambda x: x[0], reverse=True)
-        return [text for score, text in scored[:_TOP_K] if score >= _MIN_SCORE]
+        result = [text for score, text in scored[:_TOP_K] if score >= _MIN_SCORE]
+        _q_cache_set(cache_key, result)
+        return result
 
     except Exception as e:
         print(f"[RAG] retrieve failed (non-fatal): {e}")

@@ -264,6 +264,7 @@ async def update_notification_settings(
     cid = clinic_id or settings.clinic_id
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
     row = await asyncio.to_thread(repo.upsert_clinic_settings, cid, **fields)
+    app_cache.invalidate(cid)
     return _row_to_notification_settings(row)
 
 
@@ -414,6 +415,7 @@ async def update_coverage_settings(
     cid = clinic_id or settings.clinic_id
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
     row = await asyncio.to_thread(repo.upsert_clinic_settings, cid, **fields)
+    app_cache.invalidate(cid)
     return _row_to_coverage_settings(row)
 
 

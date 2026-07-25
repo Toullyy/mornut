@@ -82,6 +82,30 @@ async def _build_system_prompt(clinic_id: str, question: str = "") -> str:
     )
 
 
+async def _chat_completion(messages: list[dict]) -> object:
+    """Call OpenAI; fall back to DeepSeek if configured and OpenAI fails."""
+    _kwargs = dict(
+        messages=messages,
+        response_format={"type": "json_object"},
+        temperature=0.4,
+        max_tokens=400,
+    )
+    try:
+        client = AsyncOpenAI(api_key=settings.openai_api_key)
+        return await client.chat.completions.create(model=settings.openai_model, **_kwargs)
+    except Exception as primary_err:
+        if settings.deepseek_api_key:
+            print(f"[AI_CHAT] OpenAI failed ({primary_err}), trying DeepSeek fallback")
+            client_ds = AsyncOpenAI(
+                api_key=settings.deepseek_api_key,
+                base_url="https://api.deepseek.com",
+            )
+            return await client_ds.chat.completions.create(
+                model=settings.deepseek_model, **_kwargs
+            )
+        raise
+
+
 async def generate_reply(line_user_id: str, clinic_id: str, latest_text: str) -> tuple[str, bool]:
     """Return (reply_text, needs_human)."""
     if not settings.openai_api_key:
@@ -101,14 +125,7 @@ async def generate_reply(line_user_id: str, clinic_id: str, latest_text: str) ->
 
     t_start = time.monotonic()
     try:
-        client = AsyncOpenAI(api_key=settings.openai_api_key)
-        resp = await client.chat.completions.create(
-            model=settings.openai_model,
-            messages=messages,
-            response_format={"type": "json_object"},
-            temperature=0.4,
-            max_tokens=400,
-        )
+        resp = await _chat_completion(messages)
         latency_ms = int((time.monotonic() - t_start) * 1000)
 
         data = json.loads(resp.choices[0].message.content or "{}")
