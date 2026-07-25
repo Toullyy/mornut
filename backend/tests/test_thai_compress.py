@@ -1,10 +1,10 @@
-"""Golden tests for the §2 Layer 2 Thai text compressor.
+"""Golden tests for the §2 Layer 2 Thai text compressor (thai_optimizer.compress).
 
 All pure — no DB, no network, no async.
 """
 import pytest
 
-from app.utils.thai_compress import compress
+from app.services.thai_optimizer import compress
 
 
 class TestThaiDigitNormalization:

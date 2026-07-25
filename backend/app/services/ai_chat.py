@@ -12,7 +12,7 @@ from openai import AsyncOpenAI
 from app.core.config import settings
 from app.services import cache as app_cache
 from app.services import database as repo
-from app.utils.thai_compress import compress as compress_text
+from app.services.thai_optimizer import compress as compress_text
 
 _HISTORY_LIMIT = 20
 
