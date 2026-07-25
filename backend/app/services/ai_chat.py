@@ -12,6 +12,7 @@ from openai import AsyncOpenAI
 from app.core.config import settings
 from app.services import cache as app_cache
 from app.services import database as repo
+from app.utils.thai_compress import compress as compress_text
 
 _HISTORY_LIMIT = 20
 
@@ -117,11 +118,14 @@ async def generate_reply(line_user_id: str, clinic_id: str, latest_text: str) ->
     history = await asyncio.to_thread(repo.get_messages, line_user_id, _HISTORY_LIMIT)
     system_prompt = await _build_system_prompt(clinic_id, latest_text)
 
+    # §2 Layer 2: compress user text before sending to LLM (no-op on failure)
+    compressed_text = compress_text(latest_text)
+
     messages = [{"role": "system", "content": system_prompt}]
     for m in history:
         role = "user" if m["direction"] == "in" else "assistant"
         messages.append({"role": role, "content": m["text"]})
-    messages.append({"role": "user", "content": latest_text})
+    messages.append({"role": "user", "content": compressed_text})
 
     t_start = time.monotonic()
     try:
