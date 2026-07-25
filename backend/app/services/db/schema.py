@@ -153,6 +153,27 @@ def ensure_schema() -> None:
                 "ALTER TABLE clinic_settings "
                 "ADD COLUMN IF NOT EXISTS ai_knowledge TEXT NOT NULL DEFAULT ''"
             )
+            # Self-learning: log questions AI couldn't answer from clinic knowledge
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS unanswered_questions (
+                    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    clinic_id   TEXT NOT NULL,
+                    question    TEXT NOT NULL,
+                    line_user_id TEXT,
+                    asked_count INT  NOT NULL DEFAULT 1,
+                    answered    BOOLEAN NOT NULL DEFAULT FALSE,
+                    answer      TEXT,
+                    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    answered_at TIMESTAMPTZ,
+                    UNIQUE (clinic_id, question)
+                )
+                """
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_unanswered_questions_clinic "
+                "ON unanswered_questions(clinic_id, answered, created_at DESC)"
+            )
             # RAG knowledge chunks — pre-computed embeddings for clinic knowledge
             cur.execute(
                 """

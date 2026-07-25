@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
-import { AlertCircle, AlertTriangle, Bot, Clock3, Loader2, MapPin, Package, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
+import { AlertCircle, AlertTriangle, Bot, Check, Clock3, HelpCircle, Loader2, MapPin, Package, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
 import { TimePicker } from '../ui/TimePicker'
 import {
   getClinicSettings, updateClinicSettings, rebuildRag,
+  fetchUnansweredQuestions, submitAnswer,
   fetchAdminServices, createService, updateService, deleteService,
   fetchDoctors, updateDoctorShifts,
-  type ServiceItem, type ServiceCreate,
+  type ServiceItem, type ServiceCreate, type UnansweredQuestion,
 } from '../api'
 import { SettingsSection } from '../ui/SettingsLayout'
 import { CLINIC_ID, type DaySlot, type WeekSchedule } from '../types'
@@ -423,6 +424,87 @@ function AiKnowledgeSection() {
   )
 }
 
+// ── Unanswered Questions Section ─────────────────────────────────────────────
+
+function UnansweredSection() {
+  const [questions, setQuestions] = useState<UnansweredQuestion[]>([])
+  const [loading, setLoading] = useState(true)
+  const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState<Record<string, boolean>>({})
+  const [saved, setSaved] = useState<Record<string, boolean>>({})
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    fetchUnansweredQuestions(CLINIC_ID)
+      .then(setQuestions)
+      .catch(e => setError((e as Error).message))
+      .finally(() => setLoading(false))
+  }, [])
+
+  async function handleAnswer(id: string) {
+    const answer = answers[id]?.trim()
+    if (!answer) return
+    setSaving(prev => ({ ...prev, [id]: true }))
+    try {
+      await submitAnswer(id, answer)
+      setQuestions(prev => prev.filter(q => q.id !== id))
+      setSaved(prev => ({ ...prev, [id]: true }))
+    } catch (e) {
+      setError((e as Error).message || 'บันทึกคำตอบไม่สำเร็จ')
+    } finally {
+      setSaving(prev => ({ ...prev, [id]: false }))
+    }
+  }
+
+  return (
+    <SettingsSection title="คำถามที่ AI ตอบไม่ได้" icon={<HelpCircle size={16} />}>
+      <div className="pt-2 flex flex-col gap-3">
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          คำถามจากผู้ป่วยที่ AI ไม่มีข้อมูลตอบ — ใส่คำตอบเพื่อสอน AI และอัปเดต Knowledge Base อัตโนมัติ
+        </p>
+        {loading ? (
+          <p className="text-sm text-muted-foreground">กำลังโหลด...</p>
+        ) : questions.length === 0 ? (
+          <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+            <Check size={14} className="text-primary" />ยังไม่มีคำถามที่รอคำตอบ
+          </p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {questions.map(q => (
+              <div key={q.id} className="rounded-xl border border-border bg-card p-3 flex flex-col gap-2">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-medium text-foreground">"{q.question}"</p>
+                  {q.asked_count > 1 && (
+                    <span className="text-xs text-muted-foreground shrink-0">ถามซ้ำ {q.asked_count} ครั้ง</span>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="พิมพ์คำตอบ..."
+                    value={answers[q.id] || ''}
+                    onChange={e => setAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
+                    onKeyDown={e => e.key === 'Enter' && handleAnswer(q.id)}
+                    className="flex-1 text-sm bg-input-background border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-ring/30"
+                  />
+                  <button
+                    onClick={() => handleAnswer(q.id)}
+                    disabled={!answers[q.id]?.trim() || saving[q.id]}
+                    className="flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-3 py-1.5 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors cursor-pointer shrink-0">
+                    {saving[q.id] ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                    บันทึก
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {error && <p className="text-sm text-destructive flex items-center gap-1.5"><AlertCircle size={14} />{error}</p>}
+      </div>
+    </SettingsSection>
+  )
+}
+
 export function ClinicSettingsView() {
   return (
     <div className="flex flex-col gap-5">
@@ -432,6 +514,7 @@ export function ClinicSettingsView() {
       </div>
       <ClinicInfoSection />
       <AiKnowledgeSection />
+      <UnansweredSection />
       <ServicesSection />
     </div>
   )

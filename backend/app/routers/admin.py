@@ -265,6 +265,61 @@ async def update_notification_settings(
     return _row_to_notification_settings(row)
 
 
+@router.get("/unanswered-questions")
+async def list_unanswered_questions(
+    clinic_id: str = "",
+    include_answered: bool = False,
+    _admin: AdminUser = None,
+) -> list[dict]:
+    """List questions the AI couldn't answer (UNKNOWN) — for admin to provide answers."""
+    cid = clinic_id or settings.clinic_id
+    rows = await asyncio.to_thread(repo.list_unanswered_questions, cid, include_answered)
+    return rows
+
+
+class AnswerQuestion(BaseModel):
+    answer: str
+
+
+@router.post("/unanswered-questions/{question_id}/answer")
+async def answer_unanswered_question(
+    question_id: str,
+    body: AnswerQuestion,
+    clinic_id: str = "",
+    _admin: AdminUser = None,
+) -> dict:
+    """Admin provides an answer → stored in unanswered_questions and appended to ai_knowledge.
+
+    After answering, triggers a background RAG rebuild so the AI can answer
+    the same question next time without human help.
+    """
+    from app.services import rag_context
+    answer = body.answer.strip()
+    if not answer:
+        raise HTTPException(status_code=400, detail="คำตอบว่างเปล่า")
+
+    row = await asyncio.to_thread(repo.answer_question, question_id, answer)
+    if not row:
+        raise HTTPException(status_code=404, detail="ไม่พบคำถามนี้")
+
+    cid = clinic_id or settings.clinic_id
+
+    # Append Q&A pair to clinic knowledge and rebuild index in background
+    async def _append_and_rebuild():
+        try:
+            settings_row = await asyncio.to_thread(repo.get_clinic_settings, cid)
+            existing = (settings_row or {}).get("ai_knowledge", "")
+            qa_entry = f"Q: {row['question']}\nA: {answer}"
+            new_knowledge = (existing.strip() + "\n\n" + qa_entry).strip()
+            await asyncio.to_thread(repo.upsert_clinic_settings, cid, ai_knowledge=new_knowledge)
+            await rag_context.rebuild(cid, new_knowledge)
+        except Exception as e:
+            print(f"[SELF_LEARN] append+rebuild failed (non-fatal): {e}")
+
+    asyncio.ensure_future(_append_and_rebuild())
+    return row
+
+
 @router.post("/rag/rebuild")
 async def rebuild_rag_index(clinic_id: str = "", _admin: AdminUser = None) -> dict:
     """Re-embed clinic knowledge into knowledge_chunks. Call after updating ai_knowledge."""

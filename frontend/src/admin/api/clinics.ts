@@ -77,3 +77,24 @@ export function updateClinicSettings(
     body: JSON.stringify(data),
   })
 }
+
+export interface UnansweredQuestion {
+  id: string
+  question: string
+  asked_count: number
+  answered: boolean
+  answer: string | null
+  created_at: string
+  answered_at: string | null
+}
+
+export function fetchUnansweredQuestions(clinicId: string): Promise<UnansweredQuestion[]> {
+  return apiFetch<UnansweredQuestion[]>(`/admin/unanswered-questions?clinic_id=${clinicId}`)
+}
+
+export function submitAnswer(questionId: string, answer: string): Promise<UnansweredQuestion> {
+  return apiFetch<UnansweredQuestion>(`/admin/unanswered-questions/${questionId}/answer`, {
+    method: 'POST',
+    body: JSON.stringify({ answer }),
+  })
+}

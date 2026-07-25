@@ -24,14 +24,18 @@ Your duties:
 - Answer questions about queue booking, clinic services, and procedures politely and concisely
 - Suggest typing 'จอง' to book an appointment or 'สถานะ' to check existing bookings when relevant
 - NEVER diagnose illness, give medical advice, or recommend any medication/treatment
-- If the question is about symptoms, diagnosis, treatment, complaints, or anything you're unsure of,
-  reply politely that staff will follow up and set needs_human to true
-- If the question is completely unrelated to the clinic (weather, news, etc.), politely decline and redirect
+
+Classify every reply with question_type:
+- "answered": you could answer from the available information
+- "unknown": the question is about the clinic but you lack the specific information →
+  reply politely that staff will follow up (set needs_human to true)
+- "offtopic": the question is completely unrelated to the clinic (weather, news, other places) →
+  politely decline and redirect (do NOT promise to check)
 
 Clinic services: {services}
 {knowledge_section}
 Reply ONLY with valid JSON:
-{{"reply": "<Thai text to send to patient>", "needs_human": true or false}}
+{{"reply": "<Thai text to send to patient>", "needs_human": true or false, "question_type": "answered" or "unknown" or "offtopic"}}
 """
 
 _KNOWLEDGE_SECTION = """Clinic information (use this to answer FAQ accurately):
@@ -90,8 +94,16 @@ async def generate_reply(line_user_id: str, clinic_id: str, latest_text: str) ->
         data = json.loads(resp.choices[0].message.content or "{}")
         reply = str(data.get("reply", "")).strip()
         needs_human = bool(data.get("needs_human", False))
+        question_type = str(data.get("question_type", "answered"))
         if not reply:
             raise ValueError("empty reply from model")
+
+        # §7 self-learning: log in-scope questions the AI couldn't answer
+        if question_type == "unknown":
+            asyncio.ensure_future(
+                asyncio.to_thread(repo.log_unanswered_question, clinic_id, latest_text, line_user_id)
+            )
+
         return reply, needs_human
     except Exception as e:
         print(f"[AI_CHAT] generate_reply failed (non-fatal): {e}")
