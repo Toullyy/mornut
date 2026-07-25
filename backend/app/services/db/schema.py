@@ -148,6 +148,11 @@ def ensure_schema() -> None:
                 "ADD COLUMN IF NOT EXISTS open_time  TEXT NOT NULL DEFAULT '08:00', "
                 "ADD COLUMN IF NOT EXISTS close_time TEXT NOT NULL DEFAULT '17:00'"
             )
+            # AI knowledge base — free-text context the AI uses when answering FAQ
+            cur.execute(
+                "ALTER TABLE clinic_settings "
+                "ADD COLUMN IF NOT EXISTS ai_knowledge TEXT NOT NULL DEFAULT ''"
+            )
             # Booking flow state — persisted per conversation for multi-turn booking
             for col, definition in [
                 ("booking_flow_state",      "TEXT"),

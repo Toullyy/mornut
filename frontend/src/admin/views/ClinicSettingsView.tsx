@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { AlertCircle, AlertTriangle, Clock3, Loader2, MapPin, Package, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
+import { AlertCircle, AlertTriangle, Bot, Clock3, Loader2, MapPin, Package, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
 import { TimePicker } from '../ui/TimePicker'
 import {
   getClinicSettings, updateClinicSettings,
@@ -345,6 +345,67 @@ function ServicesSection() {
 
 // ── Clinic Settings View ──────────────────────────────────────────────────────
 
+function AiKnowledgeSection() {
+  const fieldFull = 'w-full text-sm bg-input-background border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring/30'
+  const [knowledge, setKnowledge] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [notice, setNotice] = useState('')
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    getClinicSettings(CLINIC_ID)
+      .then(s => setKnowledge(s.ai_knowledge || ''))
+      .catch(e => setError((e as Error).message))
+      .finally(() => setLoading(false))
+  }, [])
+
+  async function handleSave() {
+    setSaving(true); setError(''); setNotice('')
+    try {
+      await updateClinicSettings(CLINIC_ID, { ai_knowledge: knowledge })
+      setNotice('บันทึกแล้ว')
+    } catch (e) {
+      setError((e as Error).message || 'เกิดข้อผิดพลาด')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <SettingsSection title="คลังความรู้ AI" icon={<Bot size={16} />}>
+      <div className="pt-2 flex flex-col gap-4">
+        {loading ? (
+          <p className="text-sm text-muted-foreground">กำลังโหลด...</p>
+        ) : (
+          <>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              ใส่ข้อมูลคลินิกที่ต้องการให้ AI ใช้ตอบคำถามผู้ป่วย เช่น เวลาทำการ ราคาบริการ ที่จอดรถ
+              คำถามที่พบบ่อย ฯลฯ — AI จะนำข้อมูลนี้ไปใช้ตอบแชท LINE อัตโนมัติ
+            </p>
+            <textarea
+              value={knowledge}
+              onChange={e => setKnowledge(e.target.value)}
+              rows={8}
+              placeholder={`ตัวอย่าง:\nเวลาทำการ: จันทร์-ศุกร์ 08:00-17:00 น., เสาร์ 08:00-12:00 น.\nที่จอดรถ: มีที่จอดรถฟรีด้านหน้าอาคาร\nค่าตรวจทั่วไป: 200 บาท\nนำบัตรประชาชนมาด้วยทุกครั้ง`}
+              className={fieldFull}
+              style={{ resize: 'vertical', minHeight: '160px' }}
+            />
+            <div className="flex items-center gap-3">
+              <button onClick={handleSave} disabled={saving}
+                className="flex items-center gap-2 bg-primary text-primary-foreground font-medium px-4 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors text-sm cursor-pointer">
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}บันทึก
+              </button>
+              {notice && !error && <p className="text-sm text-primary">{notice}</p>}
+            </div>
+            {error && <p className="text-sm text-destructive flex items-center gap-1.5"><AlertCircle size={14} />{error}</p>}
+          </>
+        )}
+      </div>
+    </SettingsSection>
+  )
+}
+
 export function ClinicSettingsView() {
   return (
     <div className="flex flex-col gap-5">
@@ -353,6 +414,7 @@ export function ClinicSettingsView() {
         <p className="text-sm text-muted-foreground mt-0.5">ข้อมูลคลินิกและบริการที่เปิดให้บริการ</p>
       </div>
       <ClinicInfoSection />
+      <AiKnowledgeSection />
       <ServicesSection />
     </div>
   )

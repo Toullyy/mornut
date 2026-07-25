@@ -18,26 +18,36 @@ _FALLBACK_NOT_CONFIGURED = (
 )
 _FALLBACK_ERROR = "ขออภัยค่ะ ระบบขัดข้องชั่วคราว เจ้าหน้าที่จะติดต่อกลับโดยเร็วที่สุด"
 
-_SYSTEM_PROMPT_TEMPLATE = """คุณคือผู้ช่วย AI ของคลินิกที่ตอบแชทลูกค้าทาง LINE
+_SYSTEM_PROMPT_TEMPLATE = """You are a Thai clinic LINE chatbot assistant that answers patient questions.
 
-หน้าที่ของคุณ:
-- ตอบคำถามทั่วไปเกี่ยวกับการจองคิว, บริการของคลินิก, และขั้นตอนต่างๆ อย่างสุภาพและกระชับ
-- แนะนำให้พิมพ์ 'จอง' เพื่อรับลิงก์จองคิว หรือ 'สถานะ' เพื่อตรวจสอบคิวที่จองไว้ เมื่อเกี่ยวข้อง
-- ห้ามวินิจฉัยโรค ให้คำแนะนำทางการแพทย์ หรือแนะนำยา/การรักษาใดๆ โดยเด็ดขาด
-- หากคำถามเกี่ยวกับอาการป่วย การวินิจฉัย การรักษา ข้อร้องเรียน หรือเรื่องที่คุณไม่มั่นใจ
-  ให้ตอบอย่างสุภาพว่าเจ้าหน้าที่จะติดต่อกลับ และตั้งค่า needs_human เป็น true
+Your duties:
+- Answer questions about queue booking, clinic services, and procedures politely and concisely
+- Suggest typing 'จอง' to book an appointment or 'สถานะ' to check existing bookings when relevant
+- NEVER diagnose illness, give medical advice, or recommend any medication/treatment
+- If the question is about symptoms, diagnosis, treatment, complaints, or anything you're unsure of,
+  reply politely that staff will follow up and set needs_human to true
+- If the question is completely unrelated to the clinic (weather, news, etc.), politely decline and redirect
 
-บริการที่คลินิกมี: {services}
+Clinic services: {services}
+{knowledge_section}
+Reply ONLY with valid JSON:
+{{"reply": "<Thai text to send to patient>", "needs_human": true or false}}
+"""
 
-ตอบกลับเป็น JSON เท่านั้น รูปแบบ:
-{{"reply": "<ข้อความภาษาไทยที่จะส่งหาผู้ป่วย>", "needs_human": true หรือ false}}
+_KNOWLEDGE_SECTION = """Clinic information (use this to answer FAQ accurately):
+{knowledge}
 """
 
 
 async def _build_system_prompt(clinic_id: str) -> str:
-    services = await asyncio.to_thread(repo.get_services, clinic_id)
+    services, clinic_settings = await asyncio.gather(
+        asyncio.to_thread(repo.get_services, clinic_id),
+        asyncio.to_thread(repo.get_clinic_settings, clinic_id),
+    )
     names = ", ".join(s["name"] for s in services) or "ไม่มีข้อมูล"
-    return _SYSTEM_PROMPT_TEMPLATE.format(services=names)
+    knowledge = (clinic_settings or {}).get("ai_knowledge", "").strip()
+    knowledge_section = _KNOWLEDGE_SECTION.format(knowledge=knowledge) if knowledge else ""
+    return _SYSTEM_PROMPT_TEMPLATE.format(services=names, knowledge_section=knowledge_section)
 
 
 async def generate_reply(line_user_id: str, clinic_id: str, latest_text: str) -> tuple[str, bool]:

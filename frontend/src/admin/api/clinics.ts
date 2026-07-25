@@ -25,6 +25,7 @@ export interface ClinicSettings {
   phone: string
   open_time: string
   close_time: string
+  ai_knowledge: string
 }
 
 export function fetchServices(clinicId: string): Promise<ServiceItem[]> {

@@ -8,6 +8,7 @@ _CLINIC_SETTINGS_FIELDS = (
     "sso_enabled", "sso_deposit_required", "sso_deposit_amount",
     "universal_enabled", "universal_deposit_required", "universal_deposit_amount",
     "cash_deposit_required", "cash_deposit_amount",
+    "ai_knowledge",
 )
 
 
