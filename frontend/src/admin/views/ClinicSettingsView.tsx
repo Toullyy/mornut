@@ -512,7 +512,6 @@ function UnansweredSection() {
   const [loading, setLoading] = useState(true)
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState<Record<string, boolean>>({})
-  const [saved, setSaved] = useState<Record<string, boolean>>({})
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -529,7 +528,6 @@ function UnansweredSection() {
     try {
       await submitAnswer(id, answer)
       setQuestions(prev => prev.filter(q => q.id !== id))
-      setSaved(prev => ({ ...prev, [id]: true }))
     } catch (e) {
       setError((e as Error).message || 'บันทึกคำตอบไม่สำเร็จ')
     } finally {
