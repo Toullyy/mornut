@@ -121,11 +121,13 @@ async def generate_reply(line_user_id: str, clinic_id: str, latest_text: str) ->
     # §2 Layer 2: compress user text before sending to LLM (no-op on failure)
     compressed_text = compress_text(latest_text)
 
+    # history includes the just-recorded current message — exclude it so the turn
+    # is sent exactly once below (in its compressed form).
     messages = [{"role": "system", "content": system_prompt}]
-    for m in history:
+    for m in history[:-1]:
         role = "user" if m["direction"] == "in" else "assistant"
         messages.append({"role": role, "content": m["text"]})
-    messages.append({"role": "user", "content": compressed_text})
+    messages.append({"role": "user", "content": compressed_text or latest_text})
 
     t_start = time.monotonic()
     try:

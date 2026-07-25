@@ -339,6 +339,9 @@ async def answer_unanswered_question(
         msg = f"ทางคลินิกได้ตอบคำถามของคุณแล้วค่ะ 💬\n\nคำถาม: {row['question']}\nคำตอบ: {answer}"
         for uid in push_user_ids:
             try:
+                convo = await asyncio.to_thread(repo.get_conversation, uid)
+                if convo and convo.get("booking_flow_state"):
+                    continue  # user is mid-flow; don't interrupt
                 await line_service.push_text(uid, msg)
             except Exception as e:
                 print(f"[SELF_LEARN] push-back to {uid} failed (non-fatal): {e}")

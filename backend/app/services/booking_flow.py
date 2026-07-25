@@ -457,7 +457,7 @@ async def handle_message(line_user_id: str, text: str, clinic_id: str) -> Option
             except ValueError:
                 await asyncio.to_thread(repo.clear_booking_flow, line_user_id)
                 return "ขออภัยครับ ไม่พบการจองนี้ อาจถูกยกเลิกไปแล้ว"
-        if norm in ("CANCEL", "CONFIRM") or "ไม่" in compressed:
+        if norm == "CANCEL" or "ไม่" in compressed:
             await asyncio.to_thread(repo.clear_booking_flow, line_user_id)
             return "ไม่ได้ยกเลิกการจองครับ ✅ การจองของคุณยังคงอยู่"
         return _format_cancel_confirm_card(booking)
