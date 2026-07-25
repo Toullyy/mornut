@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.core.config import settings
+from app.services import cache as app_cache
 from app.core.security import (
     create_access_token,
     get_admin_user,
@@ -215,6 +216,7 @@ async def update_clinic_settings(
     row = await asyncio.to_thread(
         repo.upsert_clinic_settings, cid, **body.model_dump(exclude_none=True)
     )
+    app_cache.invalidate(cid)
     return _row_to_clinic_settings(cid, row)
 
 
@@ -433,6 +435,7 @@ async def create_service(
     service_id = await asyncio.to_thread(
         repo.create_service, cid, body.name, body.duration_min, body.deposit_amount
     )
+    app_cache.invalidate(cid)
     return ServiceOut(id=service_id, name=body.name, duration_min=body.duration_min,
                        deposit_amount=body.deposit_amount)
 
@@ -444,11 +447,13 @@ async def update_service(
     _admin: AdminUser = None,
 ) -> None:
     await asyncio.to_thread(repo.update_service, service_id, body.model_dump(exclude_none=True))
+    app_cache.invalidate(settings.clinic_id)
 
 
 @router.delete("/services/{service_id}", status_code=204)
 async def delete_service(service_id: str, _admin: AdminUser = None) -> None:
     await asyncio.to_thread(repo.delete_service, service_id)
+    app_cache.invalidate(settings.clinic_id)
 
 
 # ── LINE OA settings (connect / webhook / rich menu) ────────────────────────────

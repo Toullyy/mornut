@@ -12,6 +12,7 @@ import re
 from openai import AsyncOpenAI
 
 from app.core.config import settings
+from app.services import cache as app_cache
 from app.services import database as repo
 
 _TOP_K = 4
@@ -95,6 +96,7 @@ async def rebuild(clinic_id: str, knowledge_text: str) -> int:
             embedded.append((i, chunk, []))
 
     await asyncio.to_thread(repo.save_knowledge_chunks, clinic_id, embedded)
+    app_cache.invalidate(clinic_id)
     return len(embedded)
 
 
@@ -103,7 +105,9 @@ async def rebuild(clinic_id: str, knowledge_text: str) -> int:
 async def retrieve(clinic_id: str, question: str) -> list[str]:
     """Return top-K relevant chunk texts. Never raises; returns [] on any failure."""
     try:
-        rows = await asyncio.to_thread(repo.load_knowledge_chunks, clinic_id)
+        rows = await asyncio.to_thread(
+            app_cache.get_knowledge_chunks, clinic_id, repo.load_knowledge_chunks
+        )
         if not rows:
             return []
 

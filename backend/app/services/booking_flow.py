@@ -25,6 +25,7 @@ from datetime import date, timedelta
 from typing import Optional
 
 from app.core.config import settings
+from app.services import cache as app_cache
 from app.services import database as repo
 from app.services import intent_extractor, intent_normalizer, thai_optimizer
 
@@ -333,7 +334,9 @@ async def _run_decide_and_respond(
     slots: dict = {}
     if bk.get("date"):
         slots = await asyncio.to_thread(repo.get_slots, clinic_id, bk["date"])
-    clinic_settings = await asyncio.to_thread(repo.get_clinic_settings, clinic_id) or {}
+    clinic_settings = await asyncio.to_thread(
+        app_cache.get_clinic_settings, clinic_id, repo.get_clinic_settings
+    ) or {}
 
     # Phase 2 — Decide (pure)
     decision = decide(bk, slots, services, clinic_settings)
@@ -481,7 +484,7 @@ async def handle_message(line_user_id: str, text: str, clinic_id: str) -> Option
             await asyncio.to_thread(repo.clear_booking_flow, line_user_id)
             return "ยกเลิกการจองแล้วครับ 😊\nหากต้องการจองใหม่ พิมพ์ 'จอง' ได้เลย"
 
-    services = await asyncio.to_thread(repo.get_services, clinic_id)
+    services = await asyncio.to_thread(app_cache.get_services, clinic_id, repo.get_services)
 
     # ── No active flow: classify intent ──────────────────────────────────────
     if flow_state is None:
@@ -489,7 +492,9 @@ async def handle_message(line_user_id: str, text: str, clinic_id: str) -> Option
         intent_result = await intent_extractor.extract(compressed, services, today)
 
         if intent_result.intent == "book" and intent_result.confidence >= 0.65:
-            clinic_settings = await asyncio.to_thread(repo.get_clinic_settings, clinic_id) or {}
+            clinic_settings = await asyncio.to_thread(
+                app_cache.get_clinic_settings, clinic_id, repo.get_clinic_settings
+            ) or {}
             coverage_options = _get_coverage_options(clinic_settings)
             bk = _merge({}, intent_result, extracted, text, services, coverage_options)
             return await _run_decide_and_respond(line_user_id, bk, clinic_id, services)
@@ -515,7 +520,9 @@ async def handle_message(line_user_id: str, text: str, clinic_id: str) -> Option
 
     # ── Active flow: bk_active ────────────────────────────────────────────────
     extracted = thai_optimizer.bypass_extract(compressed, today)
-    clinic_settings = await asyncio.to_thread(repo.get_clinic_settings, clinic_id) or {}
+    clinic_settings = await asyncio.to_thread(
+        app_cache.get_clinic_settings, clinic_id, repo.get_clinic_settings
+    ) or {}
     coverage_options = _get_coverage_options(clinic_settings)
 
     intent_result = None
