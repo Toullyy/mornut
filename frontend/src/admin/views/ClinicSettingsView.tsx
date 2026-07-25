@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
-import { AlertCircle, AlertTriangle, Bot, Check, Clock3, HelpCircle, Loader2, MapPin, Package, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
+import { Activity, AlertCircle, AlertTriangle, Bot, Check, Clock3, HelpCircle, Loader2, MapPin, Package, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
 import { TimePicker } from '../ui/TimePicker'
 import {
   getClinicSettings, updateClinicSettings, rebuildRag,
   fetchUnansweredQuestions, submitAnswer,
+  fetchAiHealth,
   fetchAdminServices, createService, updateService, deleteService,
   fetchDoctors, updateDoctorShifts,
-  type ServiceItem, type ServiceCreate, type UnansweredQuestion,
+  type ServiceItem, type ServiceCreate, type UnansweredQuestion, type AiHealthStats,
 } from '../api'
 import { SettingsSection } from '../ui/SettingsLayout'
 import { CLINIC_ID, type DaySlot, type WeekSchedule } from '../types'
@@ -424,6 +425,86 @@ function AiKnowledgeSection() {
   )
 }
 
+// ── AI Health Card ───────────────────────────────────────────────────────────
+
+function AiHealthCard() {
+  const [stats, setStats] = useState<AiHealthStats | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [days, setDays] = useState(7)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    setLoading(true); setError('')
+    fetchAiHealth(CLINIC_ID, days)
+      .then(setStats)
+      .catch(e => setError((e as Error).message))
+      .finally(() => setLoading(false))
+  }, [days])
+
+  const bar = (pct: number, color: string) => (
+    <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+      <div className={`h-1.5 rounded-full ${color}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+    </div>
+  )
+
+  return (
+    <SettingsSection title="AI Health" icon={<Activity size={16} />}>
+      <div className="pt-2 flex flex-col gap-3">
+        <div className="flex items-center gap-2">
+          {([7, 14, 30] as const).map(d => (
+            <button key={d} onClick={() => setDays(d)}
+              className={`text-xs px-2.5 py-1 rounded-full border transition-colors cursor-pointer ${
+                days === d
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'border-border text-muted-foreground hover:bg-accent'
+              }`}>
+              {d} วัน
+            </button>
+          ))}
+        </div>
+
+        {loading ? (
+          <p className="text-sm text-muted-foreground">กำลังโหลด...</p>
+        ) : error ? (
+          <p className="text-sm text-destructive flex items-center gap-1.5"><AlertCircle size={14} />{error}</p>
+        ) : stats && stats.total === 0 ? (
+          <p className="text-sm text-muted-foreground">ยังไม่มีข้อมูล AI interactions ใน {days} วันที่ผ่านมา</p>
+        ) : stats ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-xs text-muted-foreground">รวม {stats.total} interactions ใน {stats.period_days} วันที่ผ่านมา</p>
+            <div className="grid grid-cols-1 gap-2">
+              {[
+                { label: 'ตอบได้', value: stats.handled, color: 'bg-primary' },
+                { label: 'ไม่มีข้อมูล', value: stats.unknown, color: 'bg-yellow-400' },
+                { label: 'นอกเรื่อง', value: stats.offtopic, color: 'bg-muted-foreground' },
+              ].map(({ label, value, color }) => (
+                <div key={label} className="flex flex-col gap-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-foreground">{label}</span>
+                    <span className="text-muted-foreground">{value.count} ({value.pct}%)</span>
+                  </div>
+                  {bar(value.pct, color)}
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-4 pt-1 text-xs text-muted-foreground border-t border-border">
+              {stats.avg_prompt_tokens > 0 && (
+                <span>avg prompt: {stats.avg_prompt_tokens} tokens</span>
+              )}
+              {stats.avg_completion_tokens > 0 && (
+                <span>avg reply: {stats.avg_completion_tokens} tokens</span>
+              )}
+              {stats.errors > 0 && (
+                <span className="text-destructive">{stats.errors} errors</span>
+              )}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </SettingsSection>
+  )
+}
+
 // ── Unanswered Questions Section ─────────────────────────────────────────────
 
 function UnansweredSection() {
@@ -514,6 +595,7 @@ export function ClinicSettingsView() {
       </div>
       <ClinicInfoSection />
       <AiKnowledgeSection />
+      <AiHealthCard />
       <UnansweredSection />
       <ServicesSection />
     </div>

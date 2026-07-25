@@ -265,6 +265,17 @@ async def update_notification_settings(
     return _row_to_notification_settings(row)
 
 
+@router.get("/ai-health")
+async def get_ai_health(
+    clinic_id: str = "",
+    days: int = 7,
+    _admin: AdminUser = None,
+) -> dict:
+    """AI health card: interaction counts, handled/unknown/offtopic rates, avg tokens."""
+    cid = clinic_id or settings.clinic_id
+    return await asyncio.to_thread(repo.get_health_stats, cid, days)
+
+
 @router.get("/unanswered-questions")
 async def list_unanswered_questions(
     clinic_id: str = "",

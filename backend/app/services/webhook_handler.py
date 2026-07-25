@@ -7,6 +7,7 @@ endpoints that read/write this state, and app/routers/internal.py for the
 periodic sweep that hands timed-out admin conversations back to AI.
 """
 import asyncio
+import time
 
 from linebot.v3.webhook import Event, MessageEvent
 from linebot.v3.webhooks import FollowEvent, ImageMessageContent, TextMessageContent
@@ -103,8 +104,13 @@ async def process_inbound_text(
         return {"replied": False, "mode": "admin", "reply": None}
 
     # §4 booking flow takes priority over general AI when active or triggered
+    t_start = time.monotonic()
     flow_reply = await booking_flow.handle_message(line_user_id, text, cid)
     if flow_reply is not None:
+        latency_ms = int((time.monotonic() - t_start) * 1000)
+        asyncio.ensure_future(
+            asyncio.to_thread(repo.log_metric, cid, "booking", line_user_id, latency_ms)
+        )
         await asyncio.to_thread(repo.record_outbound_message, line_user_id, "ai", flow_reply)
         return {"replied": True, "mode": "ai", "reply": flow_reply}
 
@@ -117,12 +123,18 @@ async def _generate_ai_reply(line_user_id: str, clinic_id: str, text: str) -> st
     lower = text.lower()
 
     if lower in _BOOK_KEYWORDS:
+        asyncio.ensure_future(
+            asyncio.to_thread(repo.log_metric, clinic_id, "static", line_user_id)
+        )
         if settings.liff_url and settings.clinic_id:
             url = f"{settings.liff_url}?clinicId={settings.clinic_id}"
             return f"กดลิงก์ด้านล่างเพื่อจองคิว:\n{url}"
         return "ระบบกำลังเตรียมพร้อม กรุณารอสักครู่"
 
     if lower in _STATUS_KEYWORDS:
+        asyncio.ensure_future(
+            asyncio.to_thread(repo.log_metric, clinic_id, "static", line_user_id)
+        )
         bookings = await asyncio.to_thread(repo.get_patient_bookings, line_user_id)
         if not bookings:
             return "ไม่พบคิวที่รอรับบริการในขณะนี้\n\nพิมพ์ 'จอง' เพื่อจองคิวใหม่"

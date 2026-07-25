@@ -174,6 +174,36 @@ def ensure_schema() -> None:
                 "CREATE INDEX IF NOT EXISTS idx_unanswered_questions_clinic "
                 "ON unanswered_questions(clinic_id, answered, created_at DESC)"
             )
+            # §8 Observability: per-turn AI interaction metrics
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS ai_metrics (
+                    id               SERIAL PRIMARY KEY,
+                    clinic_id        TEXT NOT NULL,
+                    line_user_id     TEXT,
+                    metric_type      TEXT NOT NULL,
+                    latency_ms       INT,
+                    prompt_tokens    INT,
+                    completion_tokens INT,
+                    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ai_metrics_clinic "
+                "ON ai_metrics(clinic_id, created_at DESC)"
+            )
+            # §8 Observability: silent-failure error log
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS internal_errors (
+                    id         SERIAL PRIMARY KEY,
+                    tag        TEXT NOT NULL,
+                    message    TEXT NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
             # RAG knowledge chunks — pre-computed embeddings for clinic knowledge
             cur.execute(
                 """

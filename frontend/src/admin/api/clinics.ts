@@ -98,3 +98,18 @@ export function submitAnswer(questionId: string, answer: string): Promise<Unansw
     body: JSON.stringify({ answer }),
   })
 }
+
+export interface AiHealthStats {
+  period_days: number
+  total: number
+  handled: { count: number; pct: number }
+  unknown: { count: number; pct: number }
+  offtopic: { count: number; pct: number }
+  errors: number
+  avg_prompt_tokens: number
+  avg_completion_tokens: number
+}
+
+export function fetchAiHealth(clinicId: string, days = 7): Promise<AiHealthStats> {
+  return apiFetch<AiHealthStats>(`/admin/ai-health?clinic_id=${clinicId}&days=${days}`)
+}

@@ -5,6 +5,7 @@ OpenAI isn't configured or the call fails, so the webhook never goes silent.
 """
 import asyncio
 import json
+import time
 
 from openai import AsyncOpenAI
 
@@ -71,6 +72,9 @@ async def _build_system_prompt(clinic_id: str, question: str = "") -> str:
 async def generate_reply(line_user_id: str, clinic_id: str, latest_text: str) -> tuple[str, bool]:
     """Return (reply_text, needs_human)."""
     if not settings.openai_api_key:
+        asyncio.ensure_future(
+            asyncio.to_thread(repo.log_metric, clinic_id, "error", line_user_id)
+        )
         return _FALLBACK_NOT_CONFIGURED, True
 
     history = await asyncio.to_thread(repo.get_messages, line_user_id, _HISTORY_LIMIT)
@@ -82,6 +86,7 @@ async def generate_reply(line_user_id: str, clinic_id: str, latest_text: str) ->
         messages.append({"role": role, "content": m["text"]})
     messages.append({"role": "user", "content": latest_text})
 
+    t_start = time.monotonic()
     try:
         client = AsyncOpenAI(api_key=settings.openai_api_key)
         resp = await client.chat.completions.create(
@@ -91,12 +96,23 @@ async def generate_reply(line_user_id: str, clinic_id: str, latest_text: str) ->
             temperature=0.4,
             max_tokens=400,
         )
+        latency_ms = int((time.monotonic() - t_start) * 1000)
+
         data = json.loads(resp.choices[0].message.content or "{}")
         reply = str(data.get("reply", "")).strip()
         needs_human = bool(data.get("needs_human", False))
         question_type = str(data.get("question_type", "answered"))
         if not reply:
             raise ValueError("empty reply from model")
+
+        metric_type = f"faq_{question_type}" if question_type in ("answered", "unknown", "offtopic") else "faq_answered"
+        usage = resp.usage
+        asyncio.ensure_future(asyncio.to_thread(
+            repo.log_metric, clinic_id, metric_type, line_user_id,
+            latency_ms,
+            usage.prompt_tokens if usage else None,
+            usage.completion_tokens if usage else None,
+        ))
 
         # §7 self-learning: log in-scope questions the AI couldn't answer
         if question_type == "unknown":
@@ -106,5 +122,9 @@ async def generate_reply(line_user_id: str, clinic_id: str, latest_text: str) ->
 
         return reply, needs_human
     except Exception as e:
-        print(f"[AI_CHAT] generate_reply failed (non-fatal): {e}")
+        from app.services.observability import log_internal_error
+        log_internal_error("ai_chat", e)
+        asyncio.ensure_future(
+            asyncio.to_thread(repo.log_metric, clinic_id, "error", line_user_id)
+        )
         return _FALLBACK_ERROR, True

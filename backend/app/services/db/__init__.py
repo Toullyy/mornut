@@ -65,6 +65,11 @@ from .rag import (
     save_knowledge_chunks,
     load_knowledge_chunks,
 )
+from .metrics import (
+    log_metric,
+    save_internal_error,
+    get_health_stats,
+)
 from .unanswered import (
     log_unanswered_question,
     list_unanswered_questions,
@@ -101,5 +106,6 @@ __all__ = [
     "update_booking_reminder", "list_due_reminders", "mark_reminder_sent", "list_line_patients",
     "save_knowledge_chunks", "load_knowledge_chunks",
     "log_unanswered_question", "list_unanswered_questions", "answer_question",
+    "log_metric", "save_internal_error", "get_health_stats",
     "ensure_schema",
 ]
