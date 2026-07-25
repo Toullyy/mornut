@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, AlertTriangle, Bot, CheckCircle2, Loader2, Send } from 'lucide-react'
+import { AlertCircle, AlertTriangle, Bot, CheckCircle2, Loader2, Send, Sparkles } from 'lucide-react'
 import { useChatConversations, useChatMessages } from '../../hooks/useChat'
-import { resolveChat, sendChatMessage, setChatMode, type ChatMessage } from '../api'
+import { fetchAiDraft, resolveChat, sendChatMessage, setChatMode, type ChatMessage } from '../api'
 
 export function ChatView({ clinicId }: { clinicId: string }) {
   const { data: conversations, loading: listLoading } = useChatConversations(clinicId)
@@ -9,6 +9,7 @@ export function ChatView({ clinicId }: { clinicId: string }) {
   const { data: messages, loading: msgLoading, refetch } = useChatMessages(selected)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
+  const [draftLoading, setDraftLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState<null | 'resolve' | 'handback'>(null)
   const [error, setError] = useState('')
 
@@ -44,6 +45,20 @@ export function ChatView({ clinicId }: { clinicId: string }) {
     if (!selected) return
     setActionLoading('handback')
     try { await setChatMode(selected, 'ai') } finally { setActionLoading(null) }
+  }
+
+  async function handleAiDraft() {
+    if (!selected) return
+    setDraftLoading(true)
+    setError('')
+    try {
+      const { draft } = await fetchAiDraft(selected)
+      setDraft(draft)
+    } catch {
+      setError('ไม่สามารถดึง AI draft ได้')
+    } finally {
+      setDraftLoading(false)
+    }
   }
 
   function bubbleStyle(sender: ChatMessage['sender']) {
@@ -137,12 +152,18 @@ export function ChatView({ clinicId }: { clinicId: string }) {
                     onKeyDown={e => { if (e.key === 'Enter' && !sending) handleSend() }}
                     placeholder="พิมพ์ข้อความตอบกลับ..."
                     className="flex-1 text-sm bg-input-background border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring/30" />
+                  <button onClick={handleAiDraft} disabled={draftLoading}
+                    title="ให้ AI แนะนำข้อความตอบกลับ"
+                    className="flex items-center gap-1.5 border border-border text-muted-foreground text-xs font-medium px-3 py-2 rounded-lg hover:bg-secondary disabled:opacity-50 transition-colors">
+                    {draftLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                    <span className="hidden sm:inline">AI แนะนำ</span>
+                  </button>
                   <button onClick={handleSend} disabled={sending || !draft.trim()}
                     className="flex items-center gap-1.5 bg-primary text-primary-foreground font-medium px-4 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors text-sm">
                     {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}ส่ง
                   </button>
                 </div>
-                <p className="text-[10px] text-muted-foreground">การส่งข้อความจะเปลี่ยนโหมดเป็น "แอดมิน" ทันที</p>
+                <p className="text-[10px] text-muted-foreground">การส่งข้อความจะเปลี่ยนโหมดเป็น "แอดมิน" ทันที · ✨ AI แนะนำ จะดึง draft มาใส่ช่องพิมพ์ให้</p>
               </div>
             </>
           )}

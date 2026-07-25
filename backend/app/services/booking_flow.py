@@ -375,6 +375,50 @@ async def _run_decide_and_respond(
     return _decision_to_response(decision, bk)
 
 
+# ── Cancel flow helpers ───────────────────────────────────────────────────────
+
+def _format_booking_list_for_cancel(bookings: list[dict]) -> str:
+    lines = ["📋 การจองที่คุณมีอยู่:\n" + "─" * 20]
+    for i, b in enumerate(bookings, 1):
+        svc = b.get("service_name", "")
+        lines.append(f"  {i}. {b['date']}  {b['time']} น.{('  ' + svc) if svc else ''}")
+    return "\n".join(lines)
+
+
+def _format_cancel_confirm_card(b: dict) -> str:
+    svc = b.get("service_name", "")
+    return (
+        "⚠️ ยืนยันการยกเลิก?\n" + "─" * 20 + "\n"
+        f"📅 {b.get('date', '-')}  ⏰ {b.get('time', '-')} น.\n"
+        + (f"🏥 {svc}\n" if svc else "")
+        + "─" * 20 + "\n"
+        "พิมพ์ 'ยืนยัน' เพื่อยกเลิกการจอง\n"
+        "หรือ 'ไม่' เพื่อเก็บการจองไว้"
+    )
+
+
+async def _handle_cancel_intent(line_user_id: str, clinic_id: str) -> Optional[str]:
+    """Start the cancel flow: show bookings or handle directly if only one."""
+    bookings = await asyncio.to_thread(repo.get_patient_bookings, line_user_id)
+    if not bookings:
+        return "ไม่พบการจองที่รอรับบริการในขณะนี้ครับ\n\nพิมพ์ 'จอง' เพื่อจองคิวใหม่"
+
+    if len(bookings) == 1:
+        b = bookings[0]
+        await asyncio.to_thread(
+            repo.save_booking_flow, line_user_id, "cancel_confirm", {"_booking": b}
+        )
+        return _format_cancel_confirm_card(b)
+
+    await asyncio.to_thread(
+        repo.save_booking_flow, line_user_id, "cancel_select", {"_bookings": bookings}
+    )
+    return (
+        _format_booking_list_for_cancel(bookings)
+        + "\n\nพิมพ์หมายเลขการจองที่ต้องการยกเลิก"
+    )
+
+
 # ── Orchestrator entry point ──────────────────────────────────────────────────
 
 async def handle_message(line_user_id: str, text: str, clinic_id: str) -> Optional[str]:
@@ -384,19 +428,54 @@ async def handle_message(line_user_id: str, text: str, clinic_id: str) -> Option
     or None if the message should fall through to the general AI chat.
     """
     today = date.today()
+    compressed = thai_optimizer.compress(text)
 
     # ── Load persisted state ──────────────────────────────────────────────────
     flow_state, bk = await asyncio.to_thread(repo.get_booking_flow, line_user_id)
 
-    # Check expiry (DB-level updated_at handled by get_booking_flow column;
-    # we also check bk["_updated_at"] if stored)
     if flow_state and _is_expired(bk):
         await asyncio.to_thread(repo.clear_booking_flow, line_user_id)
         flow_state, bk = None, {}
 
-    # ── CANCEL is always highest priority ────────────────────────────────────
-    if flow_state:
-        compressed = thai_optimizer.compress(text)
+    # ── Cancel flow: handle BEFORE the general CANCEL priority check ──────────
+    if flow_state == "cancel_confirm":
+        norm = intent_normalizer.normalize_in_flow(compressed)
+        booking = bk.get("_booking", {})
+        if norm == "CONFIRM":
+            try:
+                await asyncio.to_thread(repo.cancel_booking, booking["id"])
+                await asyncio.to_thread(repo.clear_booking_flow, line_user_id)
+                svc = booking.get("service_name", "")
+                return (
+                    f"✅ ยกเลิกการจองเรียบร้อยแล้วครับ\n"
+                    f"📅 {booking.get('date', '')}  ⏰ {booking.get('time', '')} น."
+                    + (f"\n🏥 {svc}" if svc else "")
+                )
+            except ValueError:
+                await asyncio.to_thread(repo.clear_booking_flow, line_user_id)
+                return "ขออภัยครับ ไม่พบการจองนี้ อาจถูกยกเลิกไปแล้ว"
+        if norm in ("CANCEL", "CONFIRM") or "ไม่" in compressed:
+            await asyncio.to_thread(repo.clear_booking_flow, line_user_id)
+            return "ไม่ได้ยกเลิกการจองครับ ✅ การจองของคุณยังคงอยู่"
+        return _format_cancel_confirm_card(booking)
+
+    if flow_state == "cancel_select":
+        bookings = bk.get("_bookings", [])
+        n = _parse_number(compressed)
+        if n is not None and 1 <= n <= len(bookings):
+            selected = bookings[n - 1]
+            await asyncio.to_thread(
+                repo.save_booking_flow, line_user_id, "cancel_confirm", {"_booking": selected}
+            )
+            return _format_cancel_confirm_card(selected)
+        norm = intent_normalizer.normalize_in_flow(compressed)
+        if norm == "CANCEL" or "ออก" in compressed:
+            await asyncio.to_thread(repo.clear_booking_flow, line_user_id)
+            return "ออกจากเมนูยกเลิกแล้วครับ"
+        return _format_booking_list_for_cancel(bookings) + "\n\nพิมพ์หมายเลขการจองที่ต้องการยกเลิก"
+
+    # ── CANCEL priority: exit booking flow (not cancel existing appointment) ──
+    if flow_state and flow_state.startswith("bk_"):
         norm = intent_normalizer.normalize_in_flow(compressed)
         if norm == "CANCEL":
             await asyncio.to_thread(repo.clear_booking_flow, line_user_id)
@@ -406,7 +485,6 @@ async def handle_message(line_user_id: str, text: str, clinic_id: str) -> Option
 
     # ── No active flow: classify intent ──────────────────────────────────────
     if flow_state is None:
-        compressed = thai_optimizer.compress(text)
         extracted = thai_optimizer.bypass_extract(compressed, today)
         intent_result = await intent_extractor.extract(compressed, services, today)
 
@@ -416,12 +494,14 @@ async def handle_message(line_user_id: str, text: str, clinic_id: str) -> Option
             bk = _merge({}, intent_result, extracted, text, services, coverage_options)
             return await _run_decide_and_respond(line_user_id, bk, clinic_id, services)
 
-        # Not a booking intent → fall through
+        if intent_result.intent == "cancel" and intent_result.confidence >= 0.65:
+            return await _handle_cancel_intent(line_user_id, clinic_id)
+
+        # Not handled → fall through to general AI
         return None
 
     # ── Active flow: bk_confirm ───────────────────────────────────────────────
     if flow_state == "bk_confirm":
-        compressed = thai_optimizer.compress(text)
         norm = intent_normalizer.normalize_in_flow(compressed)
 
         if norm == "CONFIRM":
@@ -431,16 +511,13 @@ async def handle_message(line_user_id: str, text: str, clinic_id: str) -> Option
             await asyncio.to_thread(repo.save_booking_flow, line_user_id, "bk_active", _jsonable(bk))
             return "ต้องการแก้ไขอะไรครับ? (เช่น วันที่, เวลา, บริการ, สิทธิ์, ชื่อ, โทรศัพท์)"
 
-        # UNCERTAIN or anything else → repeat confirm card
         return _format_confirm_card(bk) + "\n\n(พิมพ์ 'ยืนยัน' เพื่อยืนยัน หรือ 'ยกเลิก' เพื่อยกเลิก)"
 
     # ── Active flow: bk_active ────────────────────────────────────────────────
-    compressed = thai_optimizer.compress(text)
     extracted = thai_optimizer.bypass_extract(compressed, today)
     clinic_settings = await asyncio.to_thread(repo.get_clinic_settings, clinic_id) or {}
     coverage_options = _get_coverage_options(clinic_settings)
 
-    # Only call LLM if there are still missing fields
     intent_result = None
     needs_all = ("date", "time", "service_id", "coverage", "patient_name", "phone")
     if not all(bk.get(f) for f in needs_all):

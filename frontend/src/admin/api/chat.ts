@@ -47,3 +47,9 @@ export function setChatMode(lineUserId: string, mode: 'ai' | 'admin'): Promise<C
     body: JSON.stringify({ mode }),
   })
 }
+
+export function fetchAiDraft(lineUserId: string): Promise<{ draft: string; needs_human: boolean }> {
+  return apiFetch<{ draft: string; needs_human: boolean }>(
+    `/admin/chat/conversations/${lineUserId}/ai-draft`
+  )
+}

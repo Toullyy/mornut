@@ -108,6 +108,29 @@ async def set_mode(line_user_id: str, body: ModeUpdate, _admin: AdminUser = None
     return _conversation_out(row)
 
 
+@router.get("/conversations/{line_user_id}/ai-draft")
+async def get_ai_draft(line_user_id: str, _admin: AdminUser = None) -> dict:
+    """Return an AI-generated draft reply for the admin to review/edit before sending.
+
+    Calls generate_reply with the conversation history but does NOT send anything.
+    Returns {"draft": "<text>", "needs_human": bool}.
+    """
+    convo = await asyncio.to_thread(repo.get_conversation, line_user_id)
+    if convo is None:
+        raise HTTPException(status_code=404, detail="ไม่พบการสนทนานี้")
+
+    from app.services import ai_chat
+    last_msg = await asyncio.to_thread(repo.get_last_inbound_message, line_user_id)
+    if not last_msg:
+        raise HTTPException(status_code=404, detail="ไม่มีข้อความจากผู้ป่วย")
+
+    clinic_id = convo.get("clinic_id") or settings.clinic_id
+    draft, needs_human = await ai_chat.generate_reply(
+        line_user_id, clinic_id, last_msg["text"]
+    )
+    return {"draft": draft, "needs_human": needs_human}
+
+
 # ── Local dev only: simulate an inbound LINE text message ─────────────────────
 # Lets us exercise the AI/admin mode-switch logic without a live LINE channel.
 
