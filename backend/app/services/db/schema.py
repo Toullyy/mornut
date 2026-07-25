@@ -148,6 +148,16 @@ def ensure_schema() -> None:
                 "ADD COLUMN IF NOT EXISTS open_time  TEXT NOT NULL DEFAULT '08:00', "
                 "ADD COLUMN IF NOT EXISTS close_time TEXT NOT NULL DEFAULT '17:00'"
             )
+            # Booking flow state — persisted per conversation for multi-turn booking
+            for col, definition in [
+                ("booking_flow_state",      "TEXT"),
+                ("booking_flow_data",       "JSONB"),
+                ("booking_flow_updated_at", "TIMESTAMPTZ"),
+            ]:
+                cur.execute(
+                    f"ALTER TABLE chat_conversations "
+                    f"ADD COLUMN IF NOT EXISTS {col} {definition}"
+                )
             # One-time migration: copy morning/afternoon rows → time slots
             cur.execute(
                 """

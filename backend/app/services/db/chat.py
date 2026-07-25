@@ -163,6 +163,46 @@ def set_needs_attention(line_user_id: str, flag: bool) -> None:
             )
 
 
+def get_booking_flow(line_user_id: str) -> tuple[Optional[str], dict]:
+    """Return (state, accumulator_dict). Both None/{} if no active flow."""
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "SELECT booking_flow_state, booking_flow_data, booking_flow_updated_at "
+                "FROM chat_conversations WHERE line_user_id = %s",
+                (line_user_id,),
+            )
+            row = cur.fetchone()
+    if not row or not row["booking_flow_state"]:
+        return None, {}
+    return row["booking_flow_state"], dict(row["booking_flow_data"] or {})
+
+
+def save_booking_flow(line_user_id: str, state: str, data: dict) -> None:
+    import json
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "UPDATE chat_conversations "
+                "SET booking_flow_state = %s, booking_flow_data = %s, "
+                "    booking_flow_updated_at = NOW() "
+                "WHERE line_user_id = %s",
+                (state, json.dumps(data, ensure_ascii=False), line_user_id),
+            )
+
+
+def clear_booking_flow(line_user_id: str) -> None:
+    with get_conn() as conn:
+        with cursor(conn) as cur:
+            cur.execute(
+                "UPDATE chat_conversations "
+                "SET booking_flow_state = NULL, booking_flow_data = NULL, "
+                "    booking_flow_updated_at = NULL "
+                "WHERE line_user_id = %s",
+                (line_user_id,),
+            )
+
+
 def list_timed_out_admin_conversations(timeout_minutes: int) -> list[dict]:
     with get_conn() as conn:
         with cursor(conn) as cur:

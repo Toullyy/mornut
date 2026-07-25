@@ -57,6 +57,9 @@ from .chat import (
     reopen_conversation_as_ai,
     set_needs_attention,
     list_timed_out_admin_conversations,
+    get_booking_flow,
+    save_booking_flow,
+    clear_booking_flow,
 )
 from .reminders import (
     create_booking_reminder,
@@ -84,6 +87,7 @@ __all__ = [
     "record_inbound_message", "record_outbound_message", "set_conversation_admin_reply",
     "set_conversation_mode", "resolve_conversation", "reopen_conversation_as_ai",
     "set_needs_attention", "list_timed_out_admin_conversations",
+    "get_booking_flow", "save_booking_flow", "clear_booking_flow",
     "create_booking_reminder", "list_booking_reminders", "get_booking_reminder",
     "update_booking_reminder", "list_due_reminders", "mark_reminder_sent", "list_line_patients",
     "ensure_schema",

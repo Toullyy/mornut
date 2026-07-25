@@ -12,7 +12,7 @@ from linebot.v3.webhook import Event, MessageEvent
 from linebot.v3.webhooks import FollowEvent, ImageMessageContent, TextMessageContent
 
 from app.core.config import settings
-from app.services import ai_chat
+from app.services import ai_chat, booking_flow
 from app.services import database as repo
 from app.services.line import get_profile, push_text, reply_text, send_line_notify
 
@@ -101,6 +101,12 @@ async def process_inbound_text(
         # A human is handling this conversation — stay quiet. If the admin
         # never answers, /internal/chat/check-timeouts hands it back to AI.
         return {"replied": False, "mode": "admin", "reply": None}
+
+    # §4 booking flow takes priority over general AI when active or triggered
+    flow_reply = await booking_flow.handle_message(line_user_id, text, cid)
+    if flow_reply is not None:
+        await asyncio.to_thread(repo.record_outbound_message, line_user_id, "ai", flow_reply)
+        return {"replied": True, "mode": "ai", "reply": flow_reply}
 
     reply = await _generate_ai_reply(line_user_id, cid, text)
     await asyncio.to_thread(repo.record_outbound_message, line_user_id, "ai", reply)

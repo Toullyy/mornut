@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
 
+    # DeepSeek fallback (optional) — used when OpenAI fails or quota exceeded
+    deepseek_api_key: str = ""
+    deepseek_model: str = "deepseek-chat"
+
     # Minutes an admin-mode conversation can sit unanswered before AI takes it back
     chat_admin_timeout_minutes: int = 30
 
