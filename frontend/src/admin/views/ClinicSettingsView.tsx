@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, AlertTriangle, Bot, Clock3, Loader2, MapPin, Package, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
 import { TimePicker } from '../ui/TimePicker'
 import {
-  getClinicSettings, updateClinicSettings,
+  getClinicSettings, updateClinicSettings, rebuildRag,
   fetchAdminServices, createService, updateService, deleteService,
   fetchDoctors, updateDoctorShifts,
   type ServiceItem, type ServiceCreate,
@@ -350,6 +350,7 @@ function AiKnowledgeSection() {
   const [knowledge, setKnowledge] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [rebuilding, setRebuilding] = useState(false)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
 
@@ -372,6 +373,18 @@ function AiKnowledgeSection() {
     }
   }
 
+  async function handleRebuild() {
+    setRebuilding(true); setError(''); setNotice('')
+    try {
+      const result = await rebuildRag(CLINIC_ID)
+      setNotice(result.message)
+    } catch (e) {
+      setError((e as Error).message || 'อัปเดต AI Index ไม่สำเร็จ')
+    } finally {
+      setRebuilding(false)
+    }
+  }
+
   return (
     <SettingsSection title="คลังความรู้ AI" icon={<Bot size={16} />}>
       <div className="pt-2 flex flex-col gap-4">
@@ -381,7 +394,7 @@ function AiKnowledgeSection() {
           <>
             <p className="text-xs text-muted-foreground leading-relaxed">
               ใส่ข้อมูลคลินิกที่ต้องการให้ AI ใช้ตอบคำถามผู้ป่วย เช่น เวลาทำการ ราคาบริการ ที่จอดรถ
-              คำถามที่พบบ่อย ฯลฯ — AI จะนำข้อมูลนี้ไปใช้ตอบแชท LINE อัตโนมัติ
+              คำถามที่พบบ่อย ฯลฯ — AI จะดึงเฉพาะส่วนที่เกี่ยวข้องมาตอบ (RAG)
             </p>
             <textarea
               value={knowledge}
@@ -391,10 +404,14 @@ function AiKnowledgeSection() {
               className={fieldFull}
               style={{ resize: 'vertical', minHeight: '160px' }}
             />
-            <div className="flex items-center gap-3">
-              <button onClick={handleSave} disabled={saving}
+            <div className="flex items-center gap-3 flex-wrap">
+              <button onClick={handleSave} disabled={saving || rebuilding}
                 className="flex items-center gap-2 bg-primary text-primary-foreground font-medium px-4 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors text-sm cursor-pointer">
                 {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}บันทึก
+              </button>
+              <button onClick={handleRebuild} disabled={saving || rebuilding}
+                className="flex items-center gap-2 border border-border text-foreground font-medium px-4 py-2 rounded-lg hover:bg-accent disabled:opacity-50 transition-colors text-sm cursor-pointer">
+                {rebuilding ? <Loader2 size={14} className="animate-spin" /> : <Bot size={14} />}อัปเดต AI Index
               </button>
               {notice && !error && <p className="text-sm text-primary">{notice}</p>}
             </div>

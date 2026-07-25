@@ -153,6 +153,24 @@ def ensure_schema() -> None:
                 "ALTER TABLE clinic_settings "
                 "ADD COLUMN IF NOT EXISTS ai_knowledge TEXT NOT NULL DEFAULT ''"
             )
+            # RAG knowledge chunks — pre-computed embeddings for clinic knowledge
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS knowledge_chunks (
+                    id           SERIAL PRIMARY KEY,
+                    clinic_id    TEXT NOT NULL,
+                    chunk_index  INT  NOT NULL,
+                    chunk_text   TEXT NOT NULL,
+                    embedding    JSONB NOT NULL DEFAULT '[]',
+                    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    UNIQUE (clinic_id, chunk_index)
+                )
+                """
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_clinic "
+                "ON knowledge_chunks(clinic_id)"
+            )
             # Booking flow state — persisted per conversation for multi-turn booking
             for col, definition in [
                 ("booking_flow_state",      "TEXT"),

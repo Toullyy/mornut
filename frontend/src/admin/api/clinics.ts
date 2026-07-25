@@ -62,6 +62,12 @@ export function getClinicSettings(clinicId: string): Promise<ClinicSettings> {
   return apiFetch<ClinicSettings>(`/admin/clinic-settings?clinic_id=${clinicId}`)
 }
 
+export function rebuildRag(clinicId: string): Promise<{ chunks: number; message: string }> {
+  return apiFetch<{ chunks: number; message: string }>(`/admin/rag/rebuild?clinic_id=${clinicId}`, {
+    method: 'POST',
+  })
+}
+
 export function updateClinicSettings(
   clinicId: string,
   data: Partial<Omit<ClinicSettings, 'clinic_id' | 'open_time' | 'close_time'>> & { open_time?: string; close_time?: string },

@@ -265,6 +265,19 @@ async def update_notification_settings(
     return _row_to_notification_settings(row)
 
 
+@router.post("/rag/rebuild")
+async def rebuild_rag_index(clinic_id: str = "", _admin: AdminUser = None) -> dict:
+    """Re-embed clinic knowledge into knowledge_chunks. Call after updating ai_knowledge."""
+    from app.services import rag_context
+    cid = clinic_id or settings.clinic_id
+    row = await asyncio.to_thread(repo.get_clinic_settings, cid)
+    knowledge = (row or {}).get("ai_knowledge", "").strip()
+    if not knowledge:
+        return {"chunks": 0, "message": "ไม่มีข้อมูลคลังความรู้"}
+    count = await rag_context.rebuild(cid, knowledge)
+    return {"chunks": count, "message": f"อัปเดต AI Index เรียบร้อย ({count} chunks)"}
+
+
 @router.post("/reminders/trigger-now")
 async def trigger_reminders_now(
     clinic_id: str = "",

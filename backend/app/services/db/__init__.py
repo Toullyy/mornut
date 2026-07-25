@@ -61,6 +61,10 @@ from .chat import (
     save_booking_flow,
     clear_booking_flow,
 )
+from .rag import (
+    save_knowledge_chunks,
+    load_knowledge_chunks,
+)
 from .reminders import (
     create_booking_reminder,
     list_booking_reminders,
@@ -90,5 +94,6 @@ __all__ = [
     "get_booking_flow", "save_booking_flow", "clear_booking_flow",
     "create_booking_reminder", "list_booking_reminders", "get_booking_reminder",
     "update_booking_reminder", "list_due_reminders", "mark_reminder_sent", "list_line_patients",
+    "save_knowledge_chunks", "load_knowledge_chunks",
     "ensure_schema",
 ]

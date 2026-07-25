@@ -39,14 +39,28 @@ _KNOWLEDGE_SECTION = """Clinic information (use this to answer FAQ accurately):
 """
 
 
-async def _build_system_prompt(clinic_id: str) -> str:
+async def _build_system_prompt(clinic_id: str, question: str = "") -> str:
+    from app.services import rag_context
+
     services, clinic_settings = await asyncio.gather(
         asyncio.to_thread(repo.get_services, clinic_id),
         asyncio.to_thread(repo.get_clinic_settings, clinic_id),
     )
     names = ", ".join(s["name"] for s in services) or "ไม่มีข้อมูล"
     knowledge = (clinic_settings or {}).get("ai_knowledge", "").strip()
-    knowledge_section = _KNOWLEDGE_SECTION.format(knowledge=knowledge) if knowledge else ""
+
+    knowledge_section = ""
+    if knowledge:
+        if question:
+            chunks = await rag_context.retrieve(clinic_id, question)
+            if chunks:
+                knowledge_section = _KNOWLEDGE_SECTION.format(knowledge="\n\n".join(chunks))
+            else:
+                # Fallback: inject full text (small clinic or embedding unavailable)
+                knowledge_section = _KNOWLEDGE_SECTION.format(knowledge=knowledge)
+        else:
+            knowledge_section = _KNOWLEDGE_SECTION.format(knowledge=knowledge)
+
     return _SYSTEM_PROMPT_TEMPLATE.format(services=names, knowledge_section=knowledge_section)
 
 
@@ -56,7 +70,7 @@ async def generate_reply(line_user_id: str, clinic_id: str, latest_text: str) ->
         return _FALLBACK_NOT_CONFIGURED, True
 
     history = await asyncio.to_thread(repo.get_messages, line_user_id, _HISTORY_LIMIT)
-    system_prompt = await _build_system_prompt(clinic_id)
+    system_prompt = await _build_system_prompt(clinic_id, latest_text)
 
     messages = [{"role": "system", "content": system_prompt}]
     for m in history:
