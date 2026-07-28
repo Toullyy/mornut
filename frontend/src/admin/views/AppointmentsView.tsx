@@ -2,36 +2,38 @@ import { useCallback, useEffect, useState } from 'react'
 import { CalendarDays, ChevronLeft, ChevronRight, LayoutList, Search } from 'lucide-react'
 import { fetchAppointmentsRange, type AppointmentBooking } from '../api'
 import { StatusBadge, CoverageBadge } from '../ui/StatusBadge'
+import { statusClassName } from '../types'
+
+// Format a Date to YYYY-MM-DD using LOCAL fields. toISOString() converts to
+// UTC first, which shifts the calendar day by one in TZ ahead of UTC (e.g. +07).
+function toDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function todayStr(): string {
+  return toDateStr(new Date())
+}
 
 function addDays(dateStr: string, n: number): string {
   const d = new Date(dateStr + 'T00:00:00')
   d.setDate(d.getDate() + n)
-  return d.toISOString().split('T')[0]
+  return toDateStr(d)
 }
 
 function getMondayOf(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00')
   const dow = d.getDay() // 0=Sun
   d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1))
-  return d.toISOString().split('T')[0]
+  return toDateStr(d)
 }
 
 const DAY_SHORT_TH = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา']
-
-const STATUS_COLOR: Record<AppointmentBooking['status'], string> = {
-  pending_slip: 'bg-amber-100 border-amber-300 text-amber-800',
-  confirmed: 'bg-primary/10 border-primary/30 text-primary',
-  reminded: 'bg-blue-100 border-blue-300 text-blue-800',
-  done: 'bg-muted border-border text-muted-foreground',
-  no_show: 'bg-red-100 border-red-300 text-red-800',
-  cancelled: 'bg-red-50 border-red-200 text-red-500 line-through',
-}
 
 // ── Week Calendar ─────────────────────────────────────────────────────────────
 
 function WeekCalendar({ weekStart, items }: { weekStart: string; items: AppointmentBooking[] }) {
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
-  const today = new Date().toISOString().split('T')[0]
+  const today = todayStr()
 
   const grouped = items.reduce((acc, b) => {
     const key = `${b.date}|${b.time}`
@@ -82,7 +84,7 @@ function WeekCalendar({ weekStart, items }: { weekStart: string; items: Appointm
                   <td key={d} className={`px-1 py-1 align-top ${ci < 6 ? 'border-r border-border' : ''}`}>
                     {cell.map(b => (
                       <div key={b.id}
-                        className={`mb-1 px-1.5 py-1 rounded border text-[11px] leading-tight ${STATUS_COLOR[b.status]}`}>
+                        className={`mb-1 px-1.5 py-1 rounded text-[11px] leading-tight ${statusClassName[b.status]}`}>
                         <p className="font-medium truncate">{b.patient_name}</p>
                         <p className="truncate opacity-75">{b.service_name}</p>
                       </div>
@@ -104,7 +106,7 @@ const RANGE_DAYS = 14
 
 export function AppointmentsView({ clinicId }: { clinicId: string }) {
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list')
-  const [rangeStart, setRangeStart] = useState(new Date().toISOString().split('T')[0])
+  const [rangeStart, setRangeStart] = useState(todayStr())
   const [items, setItems] = useState<AppointmentBooking[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -150,7 +152,7 @@ export function AppointmentsView({ clinicId }: { clinicId: string }) {
     if (viewMode === 'calendar') setRangeStart(addDays(weekStart, 7))
     else setRangeStart(addDays(rangeStart, RANGE_DAYS))
   }
-  function navToday() { setRangeStart(new Date().toISOString().split('T')[0]) }
+  function navToday() { setRangeStart(todayStr()) }
 
   const subtitle = viewMode === 'calendar'
     ? `${rangeLabel(weekStart)} – ${rangeLabel(weekEnd)}`
@@ -173,13 +175,13 @@ export function AppointmentsView({ clinicId }: { clinicId: string }) {
             </div>
           )}
 
-          {/* View toggle */}
+          {/* View toggle — clear search on switch so a hidden term can't silently filter */}
           <div className="flex rounded-lg border border-border overflow-hidden">
             <button onClick={() => setViewMode('list')}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-sm transition-colors cursor-pointer ${viewMode === 'list' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}>
               <LayoutList size={13} />รายการ
             </button>
-            <button onClick={() => setViewMode('calendar')}
+            <button onClick={() => { setViewMode('calendar'); setSearch('') }}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-sm border-l border-border transition-colors cursor-pointer ${viewMode === 'calendar' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}>
               <CalendarDays size={13} />ปฏิทิน
             </button>

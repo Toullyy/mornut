@@ -375,46 +375,6 @@ async def trigger_reminders_now(
     return {"reminders_sent": count}
 
 
-# ── LINE Notify token ─────────────────────────────────────────────────────────
-
-class LineNotifyTokenUpdate(BaseModel):
-    line_notify_token: str
-    clinic_id: str = ""
-
-
-@router.get("/line-notify-settings")
-async def get_line_notify_settings(
-    clinic_id: str = "",
-    _admin: AdminUser = None,
-) -> dict:
-    cid = clinic_id or settings.clinic_id
-    row = await asyncio.to_thread(repo.get_clinic_settings, cid)
-    db_token = (row or {}).get("line_notify_token", "") or ""
-    # Prefer DB token; fall back to env so legacy installs still show "configured"
-    effective = db_token or settings.line_notify_token
-    return {
-        "has_token": bool(effective),
-        "source": "db" if db_token else ("env" if settings.line_notify_token else "none"),
-        "masked": ("••••••••" + effective[-4:]) if len(effective) > 4 else ("••••" if effective else ""),
-    }
-
-
-@router.post("/line-notify-settings")
-async def save_line_notify_settings(
-    body: LineNotifyTokenUpdate,
-    _admin: AdminUser = None,
-) -> dict:
-    cid = body.clinic_id or settings.clinic_id
-    token = body.line_notify_token.strip()
-    await asyncio.to_thread(repo.upsert_clinic_settings, cid, line_notify_token=token)
-    app_cache.invalidate(cid)
-    return {
-        "has_token": bool(token),
-        "source": "db",
-        "masked": ("••••••••" + token[-4:]) if len(token) > 4 else ("••••" if token else ""),
-    }
-
-
 # ── Coverage / insurance settings ────────────────────────────────────────────
 
 class CoverageSettingsOut(BaseModel):

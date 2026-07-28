@@ -13,7 +13,7 @@ from linebot.v3.webhook import Event, MessageEvent
 from linebot.v3.webhooks import FollowEvent, ImageMessageContent, TextMessageContent
 
 from app.core.config import settings
-from app.services import ai_chat, booking_flow, cache as app_cache
+from app.services import ai_chat, booking_flow
 from app.services import database as repo
 from app.services.line import get_profile, push_text, reply_text, send_line_notify
 
@@ -119,17 +119,6 @@ async def process_inbound_text(
     return {"replied": True, "mode": "ai", "reply": reply}
 
 
-async def _get_notify_token(clinic_id: str) -> str | None:
-    """Return the LINE Notify token from clinic_settings (cached), or None."""
-    try:
-        row = await asyncio.to_thread(
-            app_cache.get_clinic_settings, clinic_id, repo.get_clinic_settings
-        )
-        return (row or {}).get("line_notify_token") or None
-    except Exception:
-        return None
-
-
 async def _generate_ai_reply(line_user_id: str, clinic_id: str, text: str) -> str:
     lower = text.lower()
 
@@ -165,8 +154,7 @@ async def _generate_ai_reply(line_user_id: str, clinic_id: str, text: str) -> st
     if needs_human:
         await asyncio.to_thread(repo.set_needs_attention, line_user_id, True)
         try:
-            tok = await _get_notify_token(clinic_id)
-            await send_line_notify(f"[AI ต้องการเจ้าหน้าที่] {line_user_id}: {text}", tok)
+            await send_line_notify(f"[AI ต้องการเจ้าหน้าที่] {line_user_id}: {text}")
         except Exception as e:
             print(f"[WEBHOOK] send_line_notify failed (non-fatal): {e}")
     return reply
@@ -192,8 +180,7 @@ async def _on_image(event: MessageEvent) -> None:
     await asyncio.to_thread(repo.set_needs_attention, line_user_id, True)
 
     try:
-        tok = await _get_notify_token(settings.clinic_id)
-        await send_line_notify(f"[รูปภาพ] จาก {line_user_id} — กรุณาตรวจสอบในหน้า Chat", tok)
+        await send_line_notify(f"[รูปภาพ] จาก {line_user_id} — กรุณาตรวจสอบในหน้า Chat")
     except Exception as e:
         print(f"[WEBHOOK] image notify failed (non-fatal): {e}")
 

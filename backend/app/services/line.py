@@ -252,16 +252,12 @@ async def push_appointment_reminder(
     await push_flex(user_id, f"แจ้งเตือนนัดหมาย — {date} เวลา {time} น.", contents)
 
 
-async def send_line_notify(message: str, token: str | None = None) -> None:
-    """POST to LINE Notify API. token overrides the env LINE_NOTIFY_TOKEN.
-    Silently skips (no error) when neither is configured."""
-    tok = token or settings.line_notify_token
-    if not tok:
-        return
+async def send_line_notify(message: str) -> None:
+    """POST to LINE Notify API to push a text message to the subscribed group."""
     async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.post(
             "https://notify-api.line.me/api/notify",
-            headers={"Authorization": f"Bearer {tok}"},
+            headers={"Authorization": f"Bearer {settings.line_notify_token}"},
             data={"message": message},
         )
         resp.raise_for_status()
