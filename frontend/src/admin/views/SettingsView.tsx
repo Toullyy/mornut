@@ -7,6 +7,7 @@ import {
 import {
   getLineSettings, saveLineCredentials, enableWebhook,
   setupRichMenu, deleteRichMenu, type LineOASettings,
+  getLineNotifySettings, saveLineNotifyToken, type LineNotifySettings,
 } from '../api'
 import {
   getNotificationSettings, saveNotificationSettings, triggerRemindersNow,
@@ -319,6 +320,74 @@ function LineOAConnectSection() {
   )
 }
 
+// ── LINE Notify Section ───────────────────────────────────────────────────────
+
+function LineNotifySection() {
+  const [info, setInfo] = useState<LineNotifySettings | null>(null)
+  const [token, setToken] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!CLINIC_ID) return
+    getLineNotifySettings(CLINIC_ID).then(setInfo).catch(() => {})
+  }, [])
+
+  async function handleSave() {
+    if (!CLINIC_ID || !token.trim()) return
+    setLoading(true); setError(''); setSaved(false)
+    try {
+      const res = await saveLineNotifyToken(CLINIC_ID, token.trim())
+      setInfo(res); setToken(''); setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (e) {
+      setError((e as Error).message || 'บันทึกไม่สำเร็จ')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fieldFull = 'w-full text-sm bg-input-background border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring/30'
+
+  return (
+    <SettingsSection title="LINE Notify (แจ้งเตือนแอดมิน)" icon={<Bell size={16} />}>
+      <div className="pt-2 flex flex-col gap-3">
+        <p className="text-xs text-muted-foreground">
+          LINE Notify ใช้แจ้งเตือนแอดมินเมื่อมีรูปภาพหรือคำถามที่ AI ตอบไม่ได้ เข้าไปสร้าง token ที่{' '}
+          <a href="https://notify-bot.line.me/my/" target="_blank" rel="noopener noreferrer"
+            className="text-primary hover:underline inline-flex items-center gap-0.5 font-medium">
+            notify-bot.line.me <ExternalLink size={10} />
+          </a>
+        </p>
+        {info?.has_token && (
+          <div className="flex items-center gap-2 text-xs text-primary bg-primary/10 rounded-lg px-3 py-2">
+            <CheckCircle2 size={13} />
+            <span>Token ตั้งค่าแล้ว: <span className="font-mono">{info.masked}</span>
+              {info.source === 'env' && <span className="ml-1 text-muted-foreground">(จาก env)</span>}
+            </span>
+          </div>
+        )}
+        <div>
+          <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
+            {info?.has_token ? 'เปลี่ยน LINE Notify Token' : 'LINE Notify Token'}
+          </label>
+          <input type="password" value={token} onChange={e => setToken(e.target.value)}
+            placeholder="วาง token ที่ได้จาก notify-bot.line.me" className={`${fieldFull} font-mono`} />
+        </div>
+        <div className="flex items-center gap-3">
+          <button onClick={handleSave} disabled={loading || !token.trim()}
+            className="flex items-center gap-2 bg-primary text-primary-foreground font-medium px-4 py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors text-sm cursor-pointer">
+            {loading ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}บันทึก Token
+          </button>
+          {saved && <span className="text-xs text-primary">บันทึกแล้ว ✓</span>}
+          {error && <span className="text-xs text-destructive">{error}</span>}
+        </div>
+      </div>
+    </SettingsSection>
+  )
+}
+
 // ── Settings View ─────────────────────────────────────────────────────────────
 
 export function SettingsView() {
@@ -439,6 +508,7 @@ export function SettingsView() {
       </div>
 
       <LineOAConnectSection />
+      <LineNotifySection />
 
       <SettingsSection title="การแจ้งเตือนนัดหมาย" icon={<Bell size={16} />}>
         <div className="pt-2 flex flex-col gap-1">

@@ -9,6 +9,7 @@ _CLINIC_SETTINGS_FIELDS = (
     "universal_enabled", "universal_deposit_required", "universal_deposit_amount",
     "cash_deposit_required", "cash_deposit_amount",
     "ai_knowledge",
+    "line_notify_token",
 )
 
 

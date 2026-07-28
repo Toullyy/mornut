@@ -54,3 +54,20 @@ export function deleteRichMenu(clinicId: string): Promise<LineOASettings> {
     method: 'DELETE',
   })
 }
+
+export interface LineNotifySettings {
+  has_token: boolean
+  source: 'db' | 'env' | 'none'
+  masked: string
+}
+
+export function getLineNotifySettings(clinicId: string): Promise<LineNotifySettings> {
+  return apiFetch<LineNotifySettings>(`/admin/line-notify-settings?clinic_id=${clinicId}`)
+}
+
+export function saveLineNotifyToken(clinicId: string, token: string): Promise<LineNotifySettings> {
+  return apiFetch<LineNotifySettings>('/admin/line-notify-settings', {
+    method: 'POST',
+    body: JSON.stringify({ clinic_id: clinicId, line_notify_token: token }),
+  })
+}
