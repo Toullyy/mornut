@@ -1,6 +1,6 @@
 import asyncio
 
-from fastapi import APIRouter, Header, Request
+from fastapi import APIRouter, Header, HTTPException, Request
 from linebot.v3.webhook import WebhookParser
 
 from app.core.security import verify_line_signature
@@ -20,6 +20,12 @@ async def handle_webhook(
     # Resolve the clinic's channel secret from DB (falls back to ENV). Running it
     # here also warms the credentials cache so reply/push downstream hit memory.
     secret = await asyncio.to_thread(line_service.resolve_channel_secret)
+
+    # Fail closed: without a secret, HMAC verification would run with an empty
+    # key — computable by anyone, making forged events pass. Reject until the
+    # clinic connects LINE OA (via the admin UI) or sets ENV.
+    if not secret:
+        raise HTTPException(status_code=503, detail="LINE OA not configured")
 
     verify_line_signature(body, x_line_signature, secret)
 
