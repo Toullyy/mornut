@@ -566,6 +566,9 @@ async def save_line_oa_settings(body: LineCredentials, _admin: AdminUser = None)
         bot_display_name=bot.get("displayName", ""),
         bot_picture_url=bot.get("pictureUrl", ""),
     )
+    # Evict cached credentials so webhook verification + reply/push pick up the
+    # new secret/token immediately (this is what makes the connect UI authoritative).
+    app_cache.invalidate(cid)
     return _settings_public(row)
 
 

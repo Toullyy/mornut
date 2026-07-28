@@ -52,6 +52,7 @@ class _TTLCache:
 _settings: _TTLCache = _TTLCache()
 _services: _TTLCache = _TTLCache()
 _chunks: _TTLCache = _TTLCache()
+_line: _TTLCache = _TTLCache()
 
 
 def get_clinic_settings(clinic_id: str, loader: Callable[[str], Any]) -> Any:
@@ -84,11 +85,27 @@ def get_knowledge_chunks(clinic_id: str, loader: Callable[[str], Any]) -> list:
     return result
 
 
+def get_line_credentials(clinic_id: str, loader: Callable[[str], Any]) -> Any:
+    """Return cached line_settings row, calling loader on miss. Sync.
+
+    Used on the hot message path to resolve a clinic's LINE channel secret /
+    access token without a DB hit per message. Invalidate after connect.
+    """
+    hit, val = _line.get(clinic_id)
+    if hit:
+        return val
+    result = loader(clinic_id)
+    _line.set(clinic_id, result)
+    return result
+
+
 def invalidate(clinic_id: str) -> None:
     """Evict all cached data for a clinic.
 
-    Call after any admin mutation: settings update, RAG rebuild, service change.
+    Call after any admin mutation: settings update, RAG rebuild, service change,
+    LINE OA connect.
     """
     _settings.delete(clinic_id)
     _services.delete(clinic_id)
     _chunks.delete(clinic_id)
+    _line.delete(clinic_id)

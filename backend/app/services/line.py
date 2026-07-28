@@ -14,14 +14,44 @@ from linebot.v3.messaging import (
 )
 
 from app.core.config import settings
+from app.services import cache as app_cache
+from app.services import database as repo
 
 _LINE_API = "https://api.line.me"
 _LINE_API_DATA = "https://api-data.line.me"
 _THAI_FONT = Path(__file__).resolve().parents[2] / "assets" / "fonts" / "Sarabun-Regular.ttf"
 
 
+# ── Credential resolution ─────────────────────────────────────────────────────
+# DB-stored per-clinic LINE credentials (set via the admin connect UI) are the
+# source of truth; ENV LINE_CHANNEL_* is the fallback. Single LINE OA = single
+# clinic for MVP, so we resolve against settings.clinic_id. The DB read is cached
+# (60s TTL) and warmed by webhook.py at the start of each request, so reply/push
+# on the hot path is a dict hit, not a query.
+
+def _line_row() -> dict | None:
+    if not settings.clinic_id:
+        return None
+    try:
+        return app_cache.get_line_credentials(settings.clinic_id, repo.get_line_settings)
+    except Exception:
+        return None
+
+
+def resolve_access_token() -> str:
+    """Per-clinic channel access token from DB (cached), falling back to ENV."""
+    row = _line_row()
+    return (row or {}).get("channel_access_token") or settings.line_channel_access_token
+
+
+def resolve_channel_secret() -> str:
+    """Per-clinic channel secret from DB (cached), falling back to ENV."""
+    row = _line_row()
+    return (row or {}).get("channel_secret") or settings.line_channel_secret
+
+
 def _cfg(access_token: str | None = None) -> Configuration:
-    return Configuration(access_token=access_token or settings.line_channel_access_token)
+    return Configuration(access_token=access_token or resolve_access_token())
 
 
 async def connect_line_oa(channel_secret: str, channel_access_token: str) -> dict:
@@ -52,7 +82,7 @@ async def get_profile(user_id: str) -> dict:
     async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.get(
             f"{_LINE_API}/v2/bot/profile/{user_id}",
-            headers={"Authorization": f"Bearer {settings.line_channel_access_token}"},
+            headers={"Authorization": f"Bearer {resolve_access_token()}"},
         )
         if resp.status_code != 200:
             return {}

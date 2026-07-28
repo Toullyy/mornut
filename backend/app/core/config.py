@@ -2,10 +2,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    # LINE Messaging API
-    line_channel_secret: str
-    line_channel_access_token: str
-    line_notify_token: str
+    # LINE Messaging API — optional ENV fallback. The per-clinic credentials saved
+    # via the admin "connect LINE OA" UI (line_settings table) are the source of
+    # truth; these are used only when no DB row exists. See services/line.py.
+    line_channel_secret: str = ""
+    line_channel_access_token: str = ""
+    line_notify_token: str = ""  # LINE Notify discontinued 2025-03-31; unused
 
     # SlipOK
     slipok_api_key: str

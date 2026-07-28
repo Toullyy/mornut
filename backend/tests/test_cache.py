@@ -6,8 +6,10 @@ import time
 
 import pytest
 
-from app.services.cache import _TTLCache, get_clinic_settings, get_services, invalidate
-from app.services.cache import _settings, _services, _chunks
+from app.services.cache import (
+    _TTLCache, get_clinic_settings, get_line_credentials, get_services, invalidate,
+)
+from app.services.cache import _settings, _services, _chunks, _line
 
 
 # ── _TTLCache unit tests ──────────────────────────────────────────────────────
@@ -150,3 +152,20 @@ class TestCacheHelpers:
         b_calls = []
         get_clinic_settings("clinic-B", lambda cid: b_calls.append(cid) or {"clinic": "B"})
         assert b_calls == []  # no loader call = cache hit
+
+    def test_get_line_credentials_caches_result(self):
+        calls = []
+        def loader(cid):
+            calls.append(cid)
+            return {"channel_secret": "s", "channel_access_token": "t"}
+
+        get_line_credentials("test-clinic", loader)
+        get_line_credentials("test-clinic", loader)
+        assert len(calls) == 1  # loader called only once
+
+    def test_invalidate_clears_line_cache(self):
+        calls = []
+        get_line_credentials("test-clinic", lambda cid: calls.append(cid) or {})
+        invalidate("test-clinic")
+        get_line_credentials("test-clinic", lambda cid: calls.append(cid) or {})
+        assert len(calls) == 2  # loader re-called after invalidate
