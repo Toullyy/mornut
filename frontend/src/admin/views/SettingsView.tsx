@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  AlertCircle, Bell, CheckCircle2, CreditCard, FileText, KeyRound,
+  AlertCircle, Bell, CheckCircle2, CreditCard, ExternalLink, FileText, KeyRound,
   LayoutGrid, Link2, Loader2, MessageCircle, Play, Save, Settings2,
   ShieldCheck, Trash2,
 } from 'lucide-react'
@@ -16,6 +16,154 @@ import {
 import { SettingsSection, SettingsRow } from '../ui/SettingsLayout'
 import { Toggle } from '../ui/Toggle'
 import { CLINIC_ID } from '../types'
+
+// ── LINE OA Setup Guide ───────────────────────────────────────────────────────
+
+function LineOASetupGuide({ settings: s }: { settings: LineOASettings | null }) {
+  const steps = [
+    {
+      id: 'create',
+      done: !!s?.has_credentials,
+      label: 'สร้าง LINE OA',
+      detail: 'สร้าง Messaging API Channel บน LINE Developers Console',
+      action: (
+        <a href="https://developers.line.biz/console/" target="_blank" rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-medium">
+          เปิด LINE Developers Console <ExternalLink size={11} />
+        </a>
+      ),
+      how: (
+        <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
+          <li>เข้าไปที่ <b>developers.line.biz</b> แล้ว login ด้วยบัญชี LINE</li>
+          <li>กด <b>Create a Provider</b> ตั้งชื่อ (เช่น ชื่อคลินิก)</li>
+          <li>กด <b>Create a new channel</b> → เลือก <b>Messaging API</b></li>
+          <li>กรอก Channel name, Category (<em>Healthcare</em>), Subcategory</li>
+          <li>กด <b>Create</b> แล้วไปที่แท็บ <b>Messaging API</b></li>
+          <li>คัดลอก <b>Channel secret</b> (จาก Basic settings) และ <b>Channel access token</b> (กด Issue)</li>
+        </ol>
+      ),
+    },
+    {
+      id: 'connect',
+      done: !!s?.connected,
+      label: 'เชื่อมต่อ credentials',
+      detail: 'กรอก Channel secret + Access token ในช่อง "เชื่อมต่อ LINE OA" ด้านล่าง',
+      action: null,
+      how: (
+        <p className="text-xs text-muted-foreground">
+          นำ Channel secret และ Channel access token จากขั้นตอนก่อนหน้ามากรอกในส่วน <b>เชื่อมต่อ LINE OA</b> ด้านล่างนี้ แล้วกด <b>บันทึกและเชื่อมต่อ</b>
+        </p>
+      ),
+    },
+    {
+      id: 'webhook',
+      done: !!s?.webhook_active,
+      label: 'ตั้งค่า Webhook',
+      detail: 'ชี้ LINE ไปยัง backend ของคุณ ต้องเป็น HTTPS สาธารณะ',
+      action: (
+        <a href="https://developers.line.biz/console/" target="_blank" rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-medium">
+          LINE Console <ExternalLink size={11} />
+        </a>
+      ),
+      how: (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">กรอก Webhook URL ในช่อง <b>Webhook</b> ด้านล่าง (รูปแบบ <code className="bg-muted px-1 rounded">https://your-backend.com/webhook</code>) แล้วกด <b>ใช้ webhook</b></p>
+          <p className="text-xs text-muted-foreground">หาก deploy บน local ให้ใช้ ngrok:</p>
+          <pre className="text-[11px] bg-muted rounded px-3 py-2 overflow-x-auto font-mono">ngrok http 8080</pre>
+          <p className="text-xs text-muted-foreground">แล้วใช้ URL จาก ngrok เช่น <code className="bg-muted px-1 rounded">https://xxxx.ngrok-free.app/webhook</code></p>
+          <p className="text-xs text-amber-600 font-medium">⚠️ ต้องปิด Auto-reply ใน LINE OA Manager ด้วย ไม่งั้น bot ตอบซ้อน</p>
+        </div>
+      ),
+    },
+    {
+      id: 'liff',
+      done: false,
+      label: 'สร้าง LIFF (หน้าจอง)',
+      detail: 'LIFF = หน้าเว็บที่เปิดในแอป LINE ใช้สำหรับหน้าจองคิว',
+      action: (
+        <a href="https://developers.line.biz/console/" target="_blank" rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-medium">
+          LINE Console <ExternalLink size={11} />
+        </a>
+      ),
+      how: (
+        <div className="space-y-2">
+          <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
+            <li>ใน LINE Developers Console → Channel → แท็บ <b>LIFF</b> → <b>Add</b></li>
+            <li>LIFF name: <em>จองคิว</em>, Size: <b>Full</b></li>
+            <li>Endpoint URL: <code className="bg-muted px-1 rounded">https://your-frontend.com/book</code></li>
+            <li>Scopes: เปิด <b>profile</b>, กด <b>Add</b></li>
+            <li>คัดลอก <b>LIFF ID</b> ที่ได้</li>
+          </ol>
+          <p className="text-xs text-muted-foreground">จากนั้นใส่ใน env:</p>
+          <pre className="text-[11px] bg-muted rounded px-3 py-2 font-mono">{
+`# frontend/.env.local
+VITE_LIFF_ID=<LIFF ID ที่ได้>
+
+# backend/.env
+LIFF_URL=https://liff.line.me/<LIFF ID ที่ได้>`}</pre>
+        </div>
+      ),
+    },
+    {
+      id: 'richmenu',
+      done: !!s?.rich_menu_id,
+      label: 'สร้าง Rich Menu',
+      detail: 'เมนูลัดด้านล่างแชท — จองคิว · คิวของฉัน · ติดต่อคลินิก',
+      action: null,
+      how: (
+        <p className="text-xs text-muted-foreground">
+          ตั้งค่า LIFF URL ในไฟล์ .env ก่อน แล้วมาคลิก <b>ตั้งค่า Rich Menu</b> ในส่วนด้านล่าง (ต้องทำหลัง step LIFF เสร็จ)
+        </p>
+      ),
+    },
+  ]
+
+  const [openStep, setOpenStep] = useState<string | null>(null)
+  const doneCount = steps.filter(s => s.done).length
+
+  if (doneCount === steps.length) return null
+
+  return (
+    <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <MessageCircle size={15} className="text-primary" />
+          <span className="text-sm font-semibold text-foreground">คู่มือเชื่อม LINE OA</span>
+        </div>
+        <span className="text-[11px] text-muted-foreground">{doneCount}/{steps.length} ขั้นตอน</span>
+      </div>
+      <div className="w-full h-1.5 bg-border rounded-full overflow-hidden">
+        <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${(doneCount / steps.length) * 100}%` }} />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {steps.map((step, i) => (
+          <div key={step.id}
+            className={`rounded-lg border transition-colors ${step.done ? 'border-primary/20 bg-primary/5' : 'border-border bg-card'}`}>
+            <button
+              onClick={() => setOpenStep(openStep === step.id ? null : step.id)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 text-left cursor-pointer">
+              <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 text-[11px] font-bold ${step.done ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                {step.done ? '✓' : i + 1}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className={`text-sm font-medium ${step.done ? 'text-primary line-through' : 'text-foreground'}`}>{step.label}</p>
+                <p className="text-[11px] text-muted-foreground truncate">{step.detail}</p>
+              </div>
+              {step.action && <div onClick={e => e.stopPropagation()}>{step.action}</div>}
+            </button>
+            {openStep === step.id && (
+              <div className="px-3 pb-3 border-t border-border/50 pt-2.5">
+                {step.how}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 // ── LINE OA Connect Section ───────────────────────────────────────────────────
 
@@ -55,6 +203,7 @@ function LineOAConnectSection() {
   return (
     <SettingsSection title="เชื่อมต่อ LINE OA" icon={<MessageCircle size={16} />}>
       <div className="pt-2 flex flex-col gap-4">
+        <LineOASetupGuide settings={s} />
         {connected && (
           <div className="flex items-center gap-2 text-sm bg-primary/10 text-primary rounded-lg px-3 py-2">
             <CheckCircle2 size={16} />
