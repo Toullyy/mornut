@@ -19,28 +19,57 @@ import { CLINIC_ID } from '../types'
 
 // ── LINE OA Setup Guide ───────────────────────────────────────────────────────
 
+const _LS_KEY = 'mornut_line_setup_manual'
+
+function _loadManual(): Record<string, boolean> {
+  try { return JSON.parse(localStorage.getItem(_LS_KEY) || '{}') } catch { return {} }
+}
+
 function LineOASetupGuide({ settings: s }: { settings: LineOASettings | null }) {
+  // Steps 'create' and 'liff' have no backend signal — user marks them done manually.
+  const [manual, setManual] = useState<Record<string, boolean>>(_loadManual)
+
+  function toggleManual(id: string) {
+    setManual(prev => {
+      const next = { ...prev, [id]: !prev[id] }
+      try { localStorage.setItem(_LS_KEY, JSON.stringify(next)) } catch {}
+      return next
+    })
+  }
+
+  const ManualCheck = ({ id }: { id: string }) => (
+    <button
+      onClick={e => { e.stopPropagation(); toggleManual(id) }}
+      className={`text-[11px] px-2 py-0.5 rounded border font-medium transition-colors ${manual[id] ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-muted border-border text-muted-foreground hover:text-foreground'}`}>
+      {manual[id] ? 'ยกเลิก' : 'ทำแล้ว ✓'}
+    </button>
+  )
+
   const steps = [
     {
       id: 'create',
-      done: !!s?.has_credentials,
+      // Auto-advances when credentials are saved; also manually checkable before that.
+      done: !!s?.has_credentials || !!manual['create'],
       label: 'สร้าง LINE OA',
       detail: 'สร้าง Messaging API Channel บน LINE Developers Console',
       action: (
         <a href="https://developers.line.biz/console/" target="_blank" rel="noopener noreferrer"
           className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-medium">
-          เปิด LINE Developers Console <ExternalLink size={11} />
+          เปิด Console <ExternalLink size={11} />
         </a>
       ),
       how: (
-        <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
-          <li>เข้าไปที่ <b>developers.line.biz</b> แล้ว login ด้วยบัญชี LINE</li>
-          <li>กด <b>Create a Provider</b> ตั้งชื่อ (เช่น ชื่อคลินิก)</li>
-          <li>กด <b>Create a new channel</b> → เลือก <b>Messaging API</b></li>
-          <li>กรอก Channel name, Category (<em>Healthcare</em>), Subcategory</li>
-          <li>กด <b>Create</b> แล้วไปที่แท็บ <b>Messaging API</b></li>
-          <li>คัดลอก <b>Channel secret</b> (จาก Basic settings) และ <b>Channel access token</b> (กด Issue)</li>
-        </ol>
+        <div className="space-y-2">
+          <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
+            <li>เข้าไปที่ <b>developers.line.biz</b> แล้ว login ด้วยบัญชี LINE</li>
+            <li>กด <b>Create a Provider</b> ตั้งชื่อ (เช่น ชื่อคลินิก)</li>
+            <li>กด <b>Create a new channel</b> → เลือก <b>Messaging API</b></li>
+            <li>กรอก Channel name, Category (<em>Healthcare</em>), Subcategory</li>
+            <li>กด <b>Create</b> แล้วไปที่แท็บ <b>Messaging API</b></li>
+            <li>คัดลอก <b>Channel secret</b> (จาก Basic settings) และ <b>Channel access token</b> (กด Issue)</li>
+          </ol>
+          {!s?.has_credentials && <ManualCheck id="create" />}
+        </div>
       ),
     },
     {
@@ -78,7 +107,8 @@ function LineOASetupGuide({ settings: s }: { settings: LineOASettings | null }) 
     },
     {
       id: 'liff',
-      done: false,
+      // No backend signal for LIFF — user marks it done manually after adding env var.
+      done: !!manual['liff'],
       label: 'สร้าง LIFF (หน้าจอง)',
       detail: 'LIFF = หน้าเว็บที่เปิดในแอป LINE ใช้สำหรับหน้าจองคิว',
       action: (
@@ -103,6 +133,7 @@ VITE_LIFF_ID=<LIFF ID ที่ได้>
 
 # backend/.env
 LIFF_URL=https://liff.line.me/<LIFF ID ที่ได้>`}</pre>
+          <ManualCheck id="liff" />
         </div>
       ),
     },
@@ -121,7 +152,7 @@ LIFF_URL=https://liff.line.me/<LIFF ID ที่ได้>`}</pre>
   ]
 
   const [openStep, setOpenStep] = useState<string | null>(null)
-  const doneCount = steps.filter(s => s.done).length
+  const doneCount = steps.filter(step => step.done).length
 
   if (doneCount === steps.length) return null
 
